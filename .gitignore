@@ -1,1 +1,4 @@
 (src/commands/auth/register.js, src/commands/dict/index.js, src/commands/emr/emr.js, src/commands/patients/register.js, src/commands/registry/appointment.js, src/components/buttons/index.js, src/components/modals/index.js)
+data/emias.db-shm
+data/emias.db
+data/emias.db-wal
