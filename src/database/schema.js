@@ -1,7 +1,5 @@
 'use strict';
 
-const { getDb } = require('./connection');
-
 /**
  * Схема таблиц системы «ЕМИАС-Discord».
  * Модель данных соответствует концепции:
@@ -34,18 +32,18 @@ function migrate(db) {
     );
 
     CREATE TABLE IF NOT EXISTS tickets (
-      ticket_id  INTEGER PRIMARY KEY AUTOINCREMENT,
+      ticket_id    INTEGER PRIMARY KEY AUTOINCREMENT,
       ticketNumber TEXT NOT NULL UNIQUE,
-      patientId  INTEGER NOT NULL REFERENCES patients(patient_id) ON DELETE CASCADE,
-      doctorId   INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
+      patientId    INTEGER NOT NULL REFERENCES patients(patient_id) ON DELETE CASCADE,
+      doctorId     INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
       doctorSpecialty TEXT,
-      doctorName TEXT,
-      date       TEXT NOT NULL,
-      time       TEXT NOT NULL,
-      status     TEXT NOT NULL DEFAULT 'waiting',
-      room       TEXT,
-      createdBy  INTEGER,
-      createdAt  TEXT NOT NULL DEFAULT (datetime('now'))
+      doctorName   TEXT,
+      date         TEXT NOT NULL,
+      time         TEXT NOT NULL,
+      status       TEXT NOT NULL DEFAULT 'waiting',
+      room         TEXT,
+      createdBy    INTEGER,
+      createdAt    TEXT NOT NULL DEFAULT (datetime('now'))
     );
 
     CREATE TABLE IF NOT EXISTS medical_records (
@@ -70,19 +68,34 @@ function migrate(db) {
       createdAt  TEXT NOT NULL DEFAULT (datetime('now')),
       expiresAt  TEXT
     );
+
+    CREATE TABLE IF NOT EXISTS prescriptions (
+      prescription_id INTEGER PRIMARY KEY AUTOINCREMENT,
+      prescriptionNumber TEXT NOT NULL UNIQUE,
+      patientId      INTEGER NOT NULL REFERENCES patients(patient_id) ON DELETE CASCADE,
+      doctorId       INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
+      medication     TEXT NOT NULL,
+      dosage         TEXT NOT NULL,
+      duration       TEXT,
+      date           TEXT NOT NULL DEFAULT (datetime('now'))
+    );
+
+    CREATE TABLE IF NOT EXISTS diagnoses (
+      diagnosis_id INTEGER PRIMARY KEY AUTOINCREMENT,
+      diagnosisNumber TEXT NOT NULL UNIQUE,
+      patientId      INTEGER NOT NULL REFERENCES patients(patient_id) ON DELETE CASCADE,
+      doctorId       INTEGER REFERENCES users(user_id) ON DELETE SET NULL,
+      mkbCode        TEXT NOT NULL,
+      diagnosisText  TEXT NOT NULL,
+      notes          TEXT,
+      date           TEXT NOT NULL DEFAULT (datetime('now'))
+    );
   `);
 }
 
 /** Инициализация схемы (используется при запуске и командой db:init). */
-function initSchema() {
-  const db = getDb();
+function initSchema(db) {
   migrate(db);
-  db.close();
-}
-
-if (require.main === module) {
-  initSchema();
-  console.log('[DB] Схема базы данных инициализирована успешно.');
 }
 
 module.exports = { migrate, initSchema };
