@@ -1,7 +1,7 @@
 'use strict';
 
 const { Events } = require('discord.js');
-const { errorEmbed } = require('../utils/embed');
+const { createErrorEmbed } = require('../templates/documentTemplates');
 const { audit, logger } = require('../utils/logger');
 
 module.exports = {
@@ -29,7 +29,7 @@ module.exports = {
 
       if (!command) {
         await interaction.reply({
-          embeds: [errorEmbed('Команда не найдена в системе ЕМИАС.')],
+          embeds: [createErrorEmbed('Команда не найдена в системе ЕМИАС.')],
           ephemeral: true,
         });
         return;
@@ -40,7 +40,7 @@ module.exports = {
       } catch (err) {
         logger.error(`[CMD] Ошибка выполнения /${interaction.commandName}:`, { message: err.message, stack: err.stack });
         audit({ action: 'COMMAND_ERROR', discordId: interaction.user.id, command: interaction.commandName, error: err.message });
-        const payload = { embeds: [errorEmbed('Произошла внутренняя ошибка при выполнении операции.')], ephemeral: true };
+        const payload = { embeds: [createErrorEmbed('Произошла внутренняя ошибка при выполнении операции.')], ephemeral: true };
         if (interaction.replied || interaction.deferred) {
           await interaction.followUp(payload);
         } else {
@@ -52,13 +52,13 @@ module.exports = {
 
     // Обработка кнопок.
     if (interaction.isButton()) {
-      const handler = interaction.client.buttons.get(interaction.customId.split('_')[0]);
+      const handler = interaction.client.buttons.get(interaction.customId);
       if (handler) {
         try {
           await handler(interaction);
         } catch (err) {
           logger.error(`[BTN] Ошибка обработки кнопки ${interaction.customId}:`, err);
-          await interaction.reply({ embeds: [errorEmbed('Ошибка обработки действия.')], ephemeral: true });
+          await interaction.reply({ embeds: [createErrorEmbed('Ошибка обработки действия.')], ephemeral: true });
         }
       }
       return;
@@ -79,14 +79,14 @@ module.exports = {
 
     // Обработка модальных окон.
     if (interaction.isModalSubmit()) {
-      const handler = interaction.client.modals.get(interaction.customId.split('_')[0]);
+      const handler = interaction.client.modals.get(interaction.customId);
       if (handler) {
         try {
           await handler(interaction);
         } catch (err) {
           logger.error(`[MODAL] Ошибка обработки модалки ${interaction.customId}:`, err);
           if (!interaction.replied) {
-            await interaction.reply({ embeds: [errorEmbed('Ошибка обработки формы.')], ephemeral: true });
+            await interaction.reply({ embeds: [createErrorEmbed('Ошибка обработки формы.')], ephemeral: true });
           }
         }
       }
