@@ -251,3 +251,66 @@ module.exports = {
   createDiagnosisModal,
   createPrescriptionModal,
 };
+
+/**
+ * Модальное окно регистрации сотрудника
+ * @param {string} customId - Уникальный ID для обработки
+ * @returns {ModalBuilder}
+ */
+function createRegisterModal(customId = 'register-modal') {
+  const usernameInput = new TextInputBuilder()
+    .setCustomId('username')
+    .setLabel('Логин пользователя')
+    .setPlaceholder('ivanov_ai')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMinLength(3)
+    .setMaxLength(50);
+
+  const passwordInput = new TextInputBuilder()
+    .setCustomId('password')
+    .setLabel('Пароль')
+    .setPlaceholder('Минимум 8 символов')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMinLength(8)
+    .setMaxLength(100);
+
+  const fullNameInput = new TextInputBuilder()
+    .setCustomId('fullName')
+    .setLabel('ФИО сотрудника')
+    .setPlaceholder('Иванов Иван Иванович')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(true)
+    .setMinLength(5)
+    .setMaxLength(150);
+
+  const specialtyInput = new TextInputBuilder()
+    .setCustomId('specialty')
+    .setLabel('Специальность (опционально)')
+    .setPlaceholder('Терапевт, Хирург и т.д.')
+    .setStyle(TextInputStyle.Short)
+    .setRequired(false)
+    .setMaxLength(100);
+
+  const row1 = new ActionRowBuilder().addComponents(usernameInput);
+  const row2 = new ActionRowBuilder().addComponents(passwordInput);
+  const row3 = new ActionRowBuilder().addComponents(fullNameInput);
+  const row4 = new ActionRowBuilder().addComponents(specialtyInput);
+
+  const modal = new ModalBuilder()
+    .setCustomId(customId)
+    .setTitle('🆕 РЕГИСТРАЦИЯ СОТРУДНИКА')
+    .addComponents(row1, row2, row3, row4);
+
+  return modal;
+}
+
+module.exports = {
+  createLoginModal,
+  createPatientRegisterModal,
+  createAppointmentModal,
+  createDiagnosisModal,
+  createPrescriptionModal,
+  createRegisterModal,
+};

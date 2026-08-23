@@ -28,6 +28,16 @@ function createRegisterPatientButton() {
 }
 
 /**
+ * Кнопка вызова модального окна регистрации сотрудника
+ */
+function createRegisterButton() {
+  return new ButtonBuilder()
+    .setCustomId('register-btn')
+    .setLabel('🆕 Зарегистрировать сотрудника')
+    .setStyle(ButtonStyle.Success);
+}
+
+/**
  * Кнопка вызова модального окна записи на приём
  */
 function createAppointmentButton() {
@@ -110,6 +120,7 @@ function createRefreshButton() {
 module.exports = {
   createLoginButton,
   createRegisterPatientButton,
+  createRegisterButton,
   createAppointmentButton,
   createViewEMRButton,
   createAddDiagnosisButton,
