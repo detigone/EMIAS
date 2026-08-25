@@ -201,32 +201,34 @@ router.get('/api/citizen/state', (req, res) => {
   });
 });
 
-if (env.DEV_LOGIN) {
-  // Дев-вход гражданином без реального Discord: один общий дев-аккаунт.
-  router.post('/api/citizen/dev-auth', (req, res) => {
-    const db = getDb();
-    let account = db.prepare(`SELECT * FROM citizen_accounts WHERE discord_id = ?`).get(DEV_DISCORD_ID);
-    if (!account) {
-      const info = db
-        .prepare(`INSERT INTO citizen_accounts (discord_id, discord_username) VALUES (?, ?)`)
-        .run(DEV_DISCORD_ID, 'dev-local');
-      account = db.prepare(`SELECT * FROM citizen_accounts WHERE id = ?`).get(info.lastInsertRowid);
-    }
-    db.prepare(`UPDATE citizen_accounts SET last_login_at = datetime('now') WHERE id = ?`).run(account.id);
+// Демо-вход гражданина — пароль ZZZ3295
+router.post('/api/citizen/dev-auth', (req, res) => {
+  const pass = String(req.body?.password || '').trim();
+  if (pass !== 'ZZZ3295') {
+    return res.status(403).json({ error: 'Неверный пароль демо' });
+  }
+  const db = getDb();
+  let account = db.prepare(`SELECT * FROM citizen_accounts WHERE discord_id = ?`).get(DEV_DISCORD_ID);
+  if (!account) {
+    const info = db
+      .prepare(`INSERT INTO citizen_accounts (discord_id, discord_username) VALUES (?, ?)`)
+      .run(DEV_DISCORD_ID, 'dev-local');
+    account = db.prepare(`SELECT * FROM citizen_accounts WHERE id = ?`).get(info.lastInsertRowid);
+  }
+  db.prepare(`UPDATE citizen_accounts SET last_login_at = datetime('now') WHERE id = ?`).run(account.id);
 
-    const patientId = Number(req.body?.patientId || 0);
-    if (patientId) {
-      const patient = db.prepare(`SELECT * FROM patients WHERE id = ?`).get(patientId);
-      if (!patient) return res.status(404).json({ error: 'Персонаж не найден' });
-      if (patient.status === 'blocked') return res.status(403).json({ error: 'Аккаунт заблокирован' });
-    }
-    const isSecure = env.PUBLIC_BASE_URL.startsWith('https');
-    const session = citizenSessions.createSession(account.id, patientId || null, isSecure);
-    audit(db, { action: 'citizen.dev_login', entityType: 'patient', entityId: patientId || null, ip: req.ip });
-    res.setHeader('Set-Cookie', session.cookie);
-    res.json({ ok: true });
-  });
-}
+  const patientId = Number(req.body?.patientId || 0);
+  if (patientId) {
+    const patient = db.prepare(`SELECT * FROM patients WHERE id = ?`).get(patientId);
+    if (!patient) return res.status(404).json({ error: 'Персонаж не найден' });
+    if (patient.status === 'blocked') return res.status(403).json({ error: 'Аккаунт заблокирован' });
+  }
+  const isSecure = env.PUBLIC_BASE_URL.startsWith('https');
+  const session = citizenSessions.createSession(account.id, patientId || null, isSecure);
+  audit(db, { action: 'citizen.dev_login', entityType: 'patient', entityId: patientId || null, ip: req.ip });
+  res.setHeader('Set-Cookie', session.cookie);
+  res.json({ ok: true });
+});
 
 // ---- Персонажи --------------------------------------------------------------
 

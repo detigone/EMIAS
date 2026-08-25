@@ -81,6 +81,13 @@ h1{font-size:18px;margin:2px 0 6px}
       </div>
       <button class="btn btn-go" id="ctz-code-btn">Войти по коду</button>
       <div class="divider">Код одноразовый, действует 10 минут</div>
+      <div style="margin-top:12px">
+        <button class="linkish" id="ctz-demo-toggle" style="font-size:12px">Демо режим</button>
+        <div id="ctz-demo" style="display:none; margin-top:10px; padding:12px; border:1.5px solid #e6edf6; border-radius:12px; background:#f8fafc; text-align:left">
+          <div class="fld"><label>Пароль демо</label><input class="inp" id="ctz-demo-pass" type="password" placeholder="•••••••"></div>
+          <button class="btn btn-go" id="ctz-demo-btn" style="padding:11px">Войти в демо</button>
+        </div>
+      </div>
     </div>
 
     <!-- Выбор персонажа -->
@@ -116,6 +123,13 @@ h1{font-size:18px;margin:2px 0 6px}
     </div>
     <button class="btn btn-go" id="st-code-btn">Войти по коду</button>
     <div class="divider">Код одноразовый, 10 минут</div>
+    <div style="margin-top:12px">
+      <button class="linkish" id="st-demo-toggle" style="font-size:12px">Демо режим</button>
+      <div id="st-demo" style="display:none; margin-top:10px; padding:12px; border:1.5px solid #e6edf6; border-radius:12px; background:#f8fafc; text-align:left">
+        <div class="fld"><label>Пароль демо</label><input class="inp" id="st-demo-pass" type="password" placeholder="•••••••"></div>
+        <button class="btn btn-go" id="st-demo-btn" style="padding:11px">Войти в демо</button>
+      </div>
+    </div>
   </div>
 
   <div class="disc">Данный сайт не является официальным ресурсом. Проект создан исключительно для RP-проекта. Все персонажи и события вымышлены.</div>
@@ -252,6 +266,27 @@ $('st-code-btn').addEventListener('click',function(){
   .catch(function(){b.disabled=false;b.textContent='Войти по коду';showError('Ошибка соединения');});
 });
 $('st-code').addEventListener('keydown',function(e){if(e.key==='Enter'){$('st-code-btn').click();}});
+/* Демо режим — пароль ZZZ3295 */
+$('ctz-demo-toggle').addEventListener('click',function(){var d=$('ctz-demo');d.style.display=d.style.display==='none'?'block':'none';});
+$('st-demo-toggle').addEventListener('click',function(){var d=$('st-demo');d.style.display=d.style.display==='none'?'block':'none';});
+function demoLogin(isStaff, passId, btnId){
+  var pass=$(passId).value.trim();
+  if(pass!=='ZZZ3295'){showError('Неверный пароль демо');return;}
+  var b=$(btnId);b.disabled=true;b.textContent='Вход…';
+  var url=isStaff?'/auth/dev-login':'/api/citizen/dev-auth';
+  fetch(url,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({password:'ZZZ3295'})})
+  .then(function(r){return r.json().then(function(d){return{status:r.status,data:d};});})
+  .then(function(res){
+    if(res.status<400 && (res.data.ok||res.data.user)){
+      if(isStaff) location.href='/staff.html'; else location.reload();
+    } else {b.disabled=false;b.textContent='Войти в демо';showError((res.data&&res.data.error)||'Ошибка демо');}
+  })
+  .catch(function(){b.disabled=false;b.textContent='Войти в демо';showError('Ошибка соединения');});
+}
+$('ctz-demo-btn').addEventListener('click',function(){demoLogin(false,'ctz-demo-pass','ctz-demo-btn');});
+$('st-demo-btn').addEventListener('click',function(){demoLogin(true,'st-demo-pass','st-demo-btn');});
+$('ctz-demo-pass').addEventListener('keydown',function(e){if(e.key==='Enter'){$('ctz-demo-btn').click();}});
+$('st-demo-pass').addEventListener('keydown',function(e){if(e.key==='Enter'){$('st-demo-btn').click();}});
 jget('/api/citizen/state',function(st,d){
   if(st===200&&d.authed){
     citizenAuthed(d);

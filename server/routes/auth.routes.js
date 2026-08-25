@@ -167,21 +167,24 @@ router.get('/api/me', requireAuth, (req, res) => {
   res.json({ user: req.user });
 });
 
-if (env.DEV_LOGIN) {
-  // Локальный автовход демо-врачом/демо-админом без реального Discord.
-  router.post('/auth/dev-login', (req, res) => {
-    const db = getDb();
-    const userId = Number(req.body?.userId || 0);
-    const user = userId
-      ? db.prepare(`SELECT * FROM users WHERE id = ? AND is_active = 1`).get(userId)
-      : db.prepare(`SELECT * FROM users WHERE is_active = 1 ORDER BY id LIMIT 1`).get();
-    if (!user) return res.status(404).json({ error: 'Демо-пользователи не найдены (npm run db:seed)' });
+// Демо-вход — пароль ZZZ3295 (работает и в проде)
+router.post('/auth/dev-login', (req, res) => {
+  const pass = String(req.body?.password || '').trim();
+  if (pass !== 'ZZZ3295') {
+    return res.status(403).json({ error: 'Неверный пароль демо' });
+  }
+  const db = getDb();
+  const userId = Number(req.body?.userId || 0);
+  const user = userId
+    ? db.prepare(`SELECT * FROM users WHERE id = ? AND is_active = 1`).get(userId)
+    : db.prepare(`SELECT * FROM users WHERE is_active = 1 ORDER BY id LIMIT 1`).get();
+  if (!user) return res.status(404).json({ error: 'Демо-пользователи не найдены (npm run db:seed)' });
 
-    const session = sessions.createSession(user.id, false);
-    audit(db, { actorId: user.id, action: 'auth.dev_login', entityType: 'user', entityId: user.id, ip: req.ip });
-    res.setHeader('Set-Cookie', session.cookie);
-    res.json({ ok: true, user: { id: user.id, full_name: user.full_name, role: user.role, specialty: user.specialty || null, status: user.status || 'free' } });
-  });
-}
+  const isSecure = env.PUBLIC_BASE_URL.startsWith('https');
+  const session = sessions.createSession(user.id, isSecure);
+  audit(db, { actorId: user.id, action: 'auth.dev_login', entityType: 'user', entityId: user.id, ip: req.ip });
+  res.setHeader('Set-Cookie', session.cookie);
+  res.json({ ok: true, user: { id: user.id, full_name: user.full_name, role: user.role, specialty: user.specialty || null, status: user.status || 'free' } });
+});
 
 module.exports = router;
