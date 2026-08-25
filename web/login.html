@@ -31,8 +31,7 @@ h1{font-size:18px;margin:2px 0 6px}
 .btn:active{transform:scale(.98)}
 .btn-discord{background:linear-gradient(135deg,#5865F2,#4752c4);color:#fff;box-shadow:0 8px 24px -8px rgba(88,101,242,.6)}
 .btn-discord:hover{transform:translateY(-2px);box-shadow:0 12px 32px -8px rgba(88,101,242,.7)}
-.btn-dev{margin-top:12px;background:#fff;color:#0f2b4e;border:1.5px solid #e6edf6;box-shadow:0 2px 8px -2px rgba(0,0,0,.08)}
-.btn-dev:hover{border-color:#93c5fd;background:#f0f5ff;box-shadow:0 4px 12px -3px rgba(37,99,235,.15)}
+
 .btn[disabled]{opacity:.55;pointer-events:none}
 .btn-go{background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;box-shadow:0 6px 20px -6px rgba(37,99,235,.5)}
 .btn-go:hover{background:linear-gradient(135deg,#1d4ed8,#1e40af);transform:translateY(-1px)}
@@ -82,7 +81,6 @@ h1{font-size:18px;margin:2px 0 6px}
       </div>
       <button class="btn btn-go" id="ctz-code-btn">Войти по коду</button>
       <div class="divider">Код одноразовый, действует 10 минут</div>
-      <button class="btn btn-dev" id="ctz-dev" style="display:none">Демо-вход (dev)</button>
     </div>
 
     <!-- Выбор персонажа -->
@@ -118,7 +116,6 @@ h1{font-size:18px;margin:2px 0 6px}
     </div>
     <button class="btn btn-go" id="st-code-btn">Войти по коду</button>
     <div class="divider">Код одноразовый, 10 минут</div>
-    <button class="btn btn-dev" id="st-dev" style="display:none">Войти в демо-режиме (dev)</button>
   </div>
 
   <div class="disc">Данный сайт не является официальным ресурсом. Проект создан исключительно для RP-проекта. Все персонажи и события вымышлены.</div>
@@ -177,17 +174,9 @@ jget('/api/setup',function(st,s){
     note.textContent='Discord OAuth не настроен (.env)';
     d&&d.parentNode.insertBefore(note,d.nextSibling);
   }
-  if(s.devLoginEnabled){$('ctz-dev').style.display='flex';$('st-dev').style.display='flex';}
 });
 
 /* Персонал */
-$('st-dev').addEventListener('click',function(){
-  var b=$('st-dev');b.disabled=true;b.textContent='Вход…';
-  fetch('/auth/dev-login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'})
-  .then(function(r){return r.json();})
-  .then(function(d){if(d.ok){location.href='/staff.html';}else{b.disabled=false;b.textContent='Войти в демо-режиме (dev)';showError(d.error||'Ошибка');}})
-  .catch(function(){b.disabled=false;b.textContent='Войти в демо-режиме (dev)';});
-});
 jget('/api/me',function(st,d){
   if(st===200&&d.user){
     var m=$('staff-me');m.style.display='block';
@@ -263,16 +252,6 @@ $('st-code-btn').addEventListener('click',function(){
   .catch(function(){b.disabled=false;b.textContent='Войти по коду';showError('Ошибка соединения');});
 });
 $('st-code').addEventListener('keydown',function(e){if(e.key==='Enter'){$('st-code-btn').click();}});
-$('ctz-dev').addEventListener('click',function(){
-  var b=$('ctz-dev');b.disabled=true;b.textContent='Вход…';
-  fetch('/api/citizen/dev-auth',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'})
-  .then(function(r){return r.json().then(function(d){return{status:r.status,data:d};});})
-  .then(function(res){
-    if(res.status<400){citizenAuthed({account:{username:'dev-local'}});}
-    else{b.disabled=false;b.textContent='Демо-вход (dev)';showError((res.data&&res.data.error)||'Ошибка');}
-  })
-  .catch(function(){b.disabled=false;b.textContent='Демо-вход (dev)';});
-});
 jget('/api/citizen/state',function(st,d){
   if(st===200&&d.authed){
     citizenAuthed(d);
