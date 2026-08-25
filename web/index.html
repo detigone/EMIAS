@@ -8,6 +8,16 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
     <title>ЕМИАС.ИНФО — Медицинский кабинет</title>
+    <style>
+    *{-webkit-user-select:none;-moz-user-select:none;-ms-user-select:none;user-select:none}
+    input,textarea,select,[contenteditable="true"],.allow-select,.allow-select *{-webkit-user-select:text;-moz-user-select:text;-ms-user-select:text;user-select:text}
+    img{-webkit-user-drag:none;user-select:none}
+    .copy-btn{display:inline-flex;align-items:center;gap:5px;padding:4px 8px;border-radius:6px;border:1px solid #e2e8f0;background:#fff;color:#64748b;font-size:11px;font-weight:600;cursor:pointer;transition:all .15s;white-space:nowrap;vertical-align:middle;margin-left:6px}
+    .copy-btn:hover{border-color:#93c5fd;color:#2563eb;background:#f0f5ff}
+    .copy-btn.copied{border-color:#86efac;color:#065f46;background:#dcfce7}
+    .copy-wrap{display:inline-flex;align-items:center;gap:4px}
+    </style>
+    <script src="/js/copy.js"></script>
     <script type="module" crossorigin>(function(){const t=document.createElement("link").relList;if(t&&t.supports&&t.supports("modulepreload"))return;for(const l of document.querySelectorAll('link[rel="modulepreload"]'))r(l);new MutationObserver(l=>{for(const i of l)if(i.type==="childList")for(const s of i.addedNodes)s.tagName==="LINK"&&s.rel==="modulepreload"&&r(s)}).observe(document,{childList:!0,subtree:!0});function n(l){const i={};return l.integrity&&(i.integrity=l.integrity),l.referrerPolicy&&(i.referrerPolicy=l.referrerPolicy),l.crossOrigin==="use-credentials"?i.credentials="include":l.crossOrigin==="anonymous"?i.credentials="omit":i.credentials="same-origin",i}function r(l){if(l.ep)return;l.ep=!0;const i=n(l);fetch(l.href,i)}})();function Uc(e){return e&&e.__esModule&&Object.prototype.hasOwnProperty.call(e,"default")?e.default:e}var mu={exports:{}},dl={},hu={exports:{}},L={};/**
  * @license React
  * react.production.min.js
@@ -259,6 +269,35 @@ Error generating stack: `+i.message+`
         }
       });
       observer.observe(document.body, {childList: true, subtree: true});
+    })();
+    </script>
+    <script>
+    // Копирование для React-портала (ЕМК, ОМС, телефон) — авто-добавление кнопок
+    (function(){
+      function addCopy(){
+        var needles = [
+          {re:/ЕМК-\d{4}-\d{6}/, label:'ЕМК'},
+          {re:/\b\d{16}\b/, label:'ОМС'},
+          {re:/\+7\s*\(\d{3}\)\s*\d{3}-\d{2}-\d{2}/, label:'тел'}
+        ];
+        document.querySelectorAll('p, span, div, b, td').forEach(function(el){
+          if(el.querySelector('.copy-btn') || el.children.length>0) return;
+          var t=(el.textContent||'').trim();
+          if(t.length>30) return;
+          for(var i=0;i<needles.length;i++){
+            var m=t.match(needles[i].re);
+            if(m){
+              var btn=document.createElement('button');
+              btn.className='copy-btn'; btn.setAttribute('data-copy', m[0]); btn.textContent='Копировать';
+              el.classList.add('copy-wrap'); el.setAttribute('data-copy', m[0]);
+              el.appendChild(btn);
+              break;
+            }
+          }
+        });
+      }
+      new MutationObserver(addCopy).observe(document.body,{childList:true,subtree:true});
+      setInterval(addCopy,2000);
     })();
     </script>
     <footer class="site-footer">

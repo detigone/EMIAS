@@ -310,7 +310,9 @@
         '<div style="margin-bottom:10px"><input id="q-search" class="input" style="width:280px" placeholder="Поиск: ФИО, карта, № талона" value="' + esc(qFilter.q) + '"></div>' +
         '<section class="panel"><div class="table-wrap"><table class="data"><thead><tr><th>Талон</th><th>Время</th><th>Пациент</th><th>Карта</th><th>Врач</th><th>Каб.</th><th>Статус</th><th>Действия</th></tr></thead><tbody>' +
         list.map(function (a) {
-          return '<tr><td><b>' + esc(a.ticket_number) + '</b></td><td>' + esc(a.time) + '</td><td>' + esc(a.patient_name) + '</td><td>' + esc(a.patient_card) + '</td><td>' + esc(a.doctor_name || '—') + '</td><td>' + esc(a.room || '—') + '</td><td><span class="badge badge-' + a.status + '">' + TICKET_LABELS[a.status] + '</span></td><td style="white-space:nowrap">' + ticketActions(a) + '</td></tr>';
+          var tCopy = a.ticket_number ? '<button class="copy-btn" data-copy="' + esc(a.ticket_number) + '">Копировать</button>' : '';
+          var cCopy = a.patient_card && a.patient_card !== '—' ? '<button class="copy-btn" data-copy="' + esc(a.patient_card) + '">Копировать</button>' : '';
+          return '<tr><td><span class="copy-wrap" data-copy="' + esc(a.ticket_number) + '"><b>' + esc(a.ticket_number) + '</b>' + tCopy + '</span></td><td>' + esc(a.time) + '</td><td>' + esc(a.patient_name) + '</td><td><span class="copy-wrap" data-copy="' + esc(a.patient_card) + '">' + esc(a.patient_card) + cCopy + '</span></td><td>' + esc(a.doctor_name || '—') + '</td><td>' + esc(a.room || '—') + '</td><td><span class="badge badge-' + a.status + '">' + TICKET_LABELS[a.status] + '</span></td><td style="white-space:nowrap">' + ticketActions(a) + '</td></tr>';
         }).join('') +
         '</tbody></table></div>' +
         (list.length ? '' : '<div class="empty-note">Под фильтр ничего не попало</div>') + '</section>';
@@ -449,7 +451,10 @@
           var badges = '';
           if (p.discord_id) badges += '<span class="mini-badge dc" title="Привязан к Discord">DS</span> ';
           if (p.status === 'blocked') badges += '<span class="badge badge-cancelled">Блок</span>';
-          return '<tr class="row-clickable" data-open="' + p.id + '"><td><b>' + esc(p.full_name) + '</b></td><td>' + esc(p.card_number) + '</td><td>' + fmtDate(p.birth_date) + '</td><td>' + esc(p.sex || '—') + '</td><td>' + esc(p.oms_number || '—') + '</td><td>' + esc(p.phone || '—') + '</td><td>' + (badges || '<span style="color:#94a3b8;font-size:12px">активен</span>') + '</td><td><button class="btn btn-secondary btn-sm">Открыть</button></td></tr>';
+          var cardC = p.card_number ? '<button class="copy-btn" data-copy="' + esc(p.card_number) + '">Копировать</button>' : '';
+          var omsC = p.oms_number && p.oms_number !== '—' ? '<button class="copy-btn" data-copy="' + esc(p.oms_number) + '">Копировать</button>' : '';
+          var phoneC = p.phone && p.phone !== '—' ? '<button class="copy-btn" data-copy="' + esc(p.phone) + '">Копировать</button>' : '';
+          return '<tr class="row-clickable" data-open="' + p.id + '"><td><b>' + esc(p.full_name) + '</b></td><td><span class="copy-wrap" data-copy="' + esc(p.card_number) + '">' + esc(p.card_number) + cardC + '</span></td><td>' + fmtDate(p.birth_date) + '</td><td>' + esc(p.sex || '—') + '</td><td><span class="copy-wrap" data-copy="' + esc(p.oms_number || '') + '">' + esc(p.oms_number || '—') + omsC + '</span></td><td><span class="copy-wrap" data-copy="' + esc(p.phone || '') + '">' + esc(p.phone || '—') + phoneC + '</span></td><td>' + (badges || '<span style="color:#94a3b8;font-size:12px">активен</span>') + '</td><td><button class="btn btn-secondary btn-sm">Открыть</button></td></tr>';
         }).join('') + '</tbody></table></div></section>';
       $$('[data-open]', b).forEach(function (tr) {
         tr.addEventListener('click', function () { openPatient(Number(tr.dataset.open)); });
@@ -501,7 +506,7 @@
       var p = d.patient;
       var info =
         '<section class="panel"><div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:8px;margin-bottom:10px">' +
-        '<h3 style="margin:0">' + esc(p.full_name) + ' · ' + esc(p.card_number) +
+        '<h3 style="margin:0"><span class="copy-wrap" data-copy="' + esc(p.card_number) + '">' + esc(p.full_name) + ' · ' + esc(p.card_number) + '<button class="copy-btn" data-copy="' + esc(p.card_number) + '">Копировать</button></span>' +
         (p.status === 'blocked' ? ' <span class="badge badge-cancelled">Заблокирован</span>' : '') +
         (p.discord_id ? ' <span class="mini-badge dc" title="Привязан к Discord">DS</span>' : '') + '</h3>' +
         '<div style="display:flex;gap:6px">' +
@@ -567,7 +572,10 @@
     }).catch(function (e) { toast(e.message, 'err'); });
   }
   function docRow(label, value) {
-    return '<div class="doc-row"><span class="doc-label">' + label + '</span><span class="doc-value">' + esc(value || '—') + '</span></div>';
+    var v = value || '—';
+    var escV = esc(v);
+    var copy = (v && v !== '—') ? '<button class="copy-btn" data-copy="' + esc(v) + '">Копировать</button>' : '';
+    return '<div class="doc-row"><span class="doc-label">' + label + '</span><span class="doc-value copy-wrap" data-copy="' + esc(v) + '">' + escV + copy + '</span></div>';
   }
 
   function openRecordModal(p) {

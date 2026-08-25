@@ -94,26 +94,31 @@
     return back;
   }
 
+  function copyBtn(val){
+    if(!val || val==='—') return '';
+    return '<button class="copy-btn" data-copy="' + esc(val) + '">Копировать</button>';
+  }
   function openProfile() {
     var statusBadge = D.account && D.account.status === 'blocked'
       ? '<span class="emw-badge bad">Заблокирован</span>'
       : '<span class="emw-badge ok">Активен</span>';
     var acct = D.account || {};
+    var cnum = cardNumber();
     modal('Профиль',
       '<div class="emw-row"><span class="emw-lab">ФИО</span><b>' + esc(me.fio) + '</b></div>' +
       '<div class="emw-row"><span class="emw-lab">Дата рождения</span><b>' + esc(me.birth || '—') + '</b></div>' +
       '<div class="emw-row"><span class="emw-lab">Пол</span><b>' + esc(me.sex || '—') + '</b></div>' +
-      '<div class="emw-row"><span class="emw-lab">Карта ЕМК</span><b>' + esc(cardNumber()) + '</b></div>' +
-      '<div class="emw-row"><span class="emw-lab">Полис ОМС</span><b>' + esc(me.policy || '—') + '</b></div>' +
-      '<div class="emw-row"><span class="emw-lab">Телефон</span><b>' + esc(me.phone || '—') + '</b></div>' +
+      '<div class="emw-row"><span class="emw-lab">Карта ЕМК</span><b class="copy-wrap" data-copy="' + esc(cnum) + '">' + esc(cnum) + copyBtn(cnum) + '</b></div>' +
+      '<div class="emw-row"><span class="emw-lab">Полис ОМС</span><b class="copy-wrap" data-copy="' + esc(me.policy||'') + '">' + esc(me.policy || '—') + copyBtn(me.policy) + '</b></div>' +
+      '<div class="emw-row"><span class="emw-lab">Телефон</span><b class="copy-wrap" data-copy="' + esc(me.phone||'') + '">' + esc(me.phone || '—') + copyBtn(me.phone) + '</b></div>' +
       '<div class="emw-row"><span class="emw-lab">Группа крови</span><b>' + esc(me.blood || '—') + '</b></div>' +
       '<div class="emw-acct"><div style="font-weight:800;margin-bottom:8px">Аккаунт</div>' +
       '<div class="emw-row" style="border:none;padding:5px 0"><span class="emw-lab">Discord</span><b>' + esc(acct.username || '—') + '</b></div>' +
-      '<div class="emw-row" style="border:none;padding:5px 0"><span class="emw-lab">ID</span><b style="font-size:12px">' + esc(acct.discordId || '—') + '</b></div>' +
+      '<div class="emw-row" style="border:none;padding:5px 0"><span class="emw-lab">ID</span><b class="copy-wrap" data-copy="' + esc(acct.discordId||'') + '" style="font-size:12px">' + esc(acct.discordId || '—') + copyBtn(acct.discordId) + '</b></div>' +
       '<div class="emw-row" style="border:none;padding:5px 0"><span class="emw-lab">Персонажей</span><b>' + (D.members ? D.members.length : 1) + '</b></div>' +
       '<div class="emw-row" style="border:none;padding:5px 0"><span class="emw-lab">Статус</span>' + statusBadge + '</div></div>' +
       '<div class="emw-foot"><button class="emw-btn sec" data-a="switch" style="flex:1;padding:12px">Сменить персонажа</button></div>' +
-      '<div class="emw-foot"><button class="emw-btn sec" data-a="linkdc" style="flex:1;padding:12px;background:#5865F2;color:#fff;border:none">🔗 Привязать Discord</button></div>'
+      '<div class="emw-foot"><button class="emw-btn sec" data-a="linkdc" style="flex:1;padding:12px;background:#5865F2;color:#fff;border:none">Привязать Discord</button></div>'
     );
     var sw = document.querySelector('[data-a=switch]');
     if (sw) sw.addEventListener('click', function () {
@@ -134,8 +139,8 @@
       modal('Привязка Discord',
         '<div style="text-align:center">' +
         '<p style="font-size:13px;color:#7c8aa0;margin:0 0 12px">Введите эту команду в чат с ботом на сервере:</p>' +
-        '<div style="font:800 30px Manrope,sans-serif;letter-spacing:4px;background:#f4f8ff;border:2px dashed #93c5fd;border-radius:14px;padding:14px;color:#1d4ed8">' + esc(d.code) + '</div>' +
-        '<p style="font-size:12.5px;color:#7c8aa0;margin-top:12px">В боте: <b>/привязать код:' + esc(d.code) + '</b><br>Код действует ' + (d.expiresInMin || 15) + ' мин.</p>' +
+        '<div class="copy-wrap" data-copy="' + esc(d.code) + '" style="font:800 30px Manrope,sans-serif;letter-spacing:4px;background:#f4f8ff;border:2px dashed #93c5fd;border-radius:14px;padding:14px;color:#1d4ed8;justify-content:center">' + esc(d.code) + '<button class="copy-btn" data-copy="' + esc(d.code) + '">Копировать</button></div>' +
+        '<p style="font-size:12.5px;color:#7c8aa0;margin-top:12px">В боте: <b>/привязать код:' + esc(d.code) + '</b> <button class="copy-btn" data-copy="/привязать код:' + esc(d.code) + '">Копировать</button><br>Код действует ' + (d.expiresInMin || 15) + ' мин.</p>' +
         '</div>');
     });
   }

@@ -8,6 +8,44 @@
 html { font-size: 14px; -webkit-font-smoothing: antialiased; -moz-osx-font-smoothing: grayscale; }
 body { font-family: 'Manrope', system-ui, -apple-system, sans-serif; line-height: 1.5; color: var(--text); background: var(--bg); min-height: 100vh; }
 
+/* ─── No select (копирование только через кнопку) ─────────── */
+* {
+  -webkit-user-select: none;
+  -moz-user-select: none;
+  -ms-user-select: none;
+  user-select: none;
+}
+input, textarea, select, [contenteditable="true"], .allow-select, .allow-select * {
+  -webkit-user-select: text;
+  -moz-user-select: text;
+  -ms-user-select: text;
+  user-select: text;
+}
+img { -webkit-user-drag: none; user-select: none; }
+
+/* ─── Copy button ─────────────────────────────────────────── */
+.copy-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 4px 8px;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--card-bg);
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all .15s;
+  white-space: nowrap;
+  vertical-align: middle;
+  margin-left: 6px;
+}
+.copy-btn:hover { border-color: #93c5fd; color: #2563eb; background: #f0f5ff; }
+.copy-btn:active { transform: scale(.95); }
+.copy-btn.copied { border-color: #86efac; color: #065f46; background: #dcfce7; }
+.copy-wrap { display: inline-flex; align-items: center; gap: 4px; }
+
 /* ─── Scrollbar ───────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 8px; height: 8px; }
 ::-webkit-scrollbar-track { background: transparent; }
