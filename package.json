@@ -1,22 +1,24 @@
 {
-  "name": "emias-discord",
-  "version": "1.0.0",
-  "description": "Discord-бот «ЕМИАС-Discord» — симулятор системы здравоохранения РФ в стиле Минздрава РФ. Модульная архитектура: auth, registration, emr.",
-  "main": "src/index.js",
+  "name": "emias",
+  "version": "2.0.0",
+  "description": "ЕМИАС — симулятор медицинской информационно-аналитической системы для ролевой игры. Веб-панель + API-шлюз + SQLite; Discord-бот подключается на фазе 2 как клиент API.",
+  "main": "server/index.js",
   "type": "commonjs",
   "license": "MIT",
   "scripts": {
-    "start": "node src/index.js",
-    "dev": "node --watch src/index.js",
-    "deploy": "node src/deploy-commands.js",
-    "db:init": "node src/database/schema.js"
+    "start": "node server/index.js",
+    "dev": "node --watch server/index.js",
+    "bot": "node bot/index.js",
+    "db:migrate": "node server/db/migrate.js",
+    "db:seed": "node server/db/seed.js"
   },
   "engines": {
-    "node": ">=18.0.0"
+    "node": ">=22.5.0"
   },
   "dependencies": {
-    "bcryptjs": "^2.4.3",
-    "discord.js": "^14.15.3",
-    "dotenv": "^16.4.5"
+    "discord.js": "^14.27.0",
+    "dotenv": "^16.4.5",
+    "express": "^5.2.1",
+    "ws": "^8.21.3"
   }
 }

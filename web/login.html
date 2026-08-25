@@ -1,0 +1,293 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ЕМИАС · Вход</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box}
+body{margin:0;min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:Manrope,system-ui,sans-serif;color:#0f2b4e;background:#f4f7fb;overflow:hidden;position:relative}
+.blob{position:absolute;border-radius:50%;filter:blur(70px);opacity:.55;pointer-events:none}
+.blob.b1{width:420px;height:420px;background:#93c5fd;top:-120px;left:-80px;animation:f1 16s ease-in-out infinite alternate}
+.blob.b2{width:360px;height:360px;background:#a5b4fc;bottom:-100px;right:-60px;animation:f2 19s ease-in-out infinite alternate}
+.blob.b3{width:280px;height:280px;background:#67e8f9;top:55%;left:60%;animation:f3 22s ease-in-out infinite alternate}
+@keyframes f1{from{transform:translate(0,0) scale(1)}to{transform:translate(60px,40px) scale(1.15)}}
+@keyframes f2{from{transform:translate(0,0) scale(1.05)}to{transform:translate(-50px,-30px) scale(.92)}}
+@keyframes f3{from{transform:translate(0,0)}to{transform:translate(-70px,30px) scale(1.1)}}
+.card{position:relative;z-index:2;width:min(440px,94vw);background:rgba(255,255,255,.9);backdrop-filter:blur(14px);border:1px solid #e6edf6;border-radius:26px;box-shadow:0 24px 60px -24px rgba(31,64,135,.35);padding:30px 30px 26px;text-align:center;animation:pop .35s ease}
+@keyframes pop{from{opacity:0;transform:scale(.96) translateY(10px)}to{opacity:1;transform:none}}
+.logo{font-size:25px;font-weight:800;background:linear-gradient(135deg,#2563eb,#1e40af);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.tag{display:inline-block;margin-top:5px;font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:#2563eb;background:#eff6ff;border-radius:999px;padding:4px 12px}
+.tabs{display:flex;background:#eef3fb;border-radius:14px;padding:4px;margin:20px 0 18px}
+.tab{flex:1;border:none;background:none;font:700 13.5px Manrope,sans-serif;color:#7c8aa0;padding:10px;border-radius:11px;cursor:pointer;transition:.15s;font-family:inherit}
+.tab.on{background:#fff;color:#1d4ed8;box-shadow:0 3px 10px -4px rgba(31,64,135,.25)}
+.pane{display:none}.pane.on{display:block}
+h1{font-size:18px;margin:2px 0 6px}
+.sub{color:#6b7a90;font-size:13px;margin:0 0 20px;line-height:1.5}
+.btn{display:flex;width:100%;align-items:center;justify-content:center;gap:10px;padding:14px 18px;border-radius:14px;font-weight:700;font-size:14.5px;text-decoration:none;cursor:pointer;border:none;transition:all .2s cubic-bezier(.4,0,.2,1);font-family:inherit;position:relative;overflow:hidden}
+.btn:active{transform:scale(.98)}
+.btn-discord{background:linear-gradient(135deg,#5865F2,#4752c4);color:#fff;box-shadow:0 8px 24px -8px rgba(88,101,242,.6)}
+.btn-discord:hover{transform:translateY(-2px);box-shadow:0 12px 32px -8px rgba(88,101,242,.7)}
+.btn-dev{margin-top:12px;background:#fff;color:#0f2b4e;border:1.5px solid #e6edf6;box-shadow:0 2px 8px -2px rgba(0,0,0,.08)}
+.btn-dev:hover{border-color:#93c5fd;background:#f0f5ff;box-shadow:0 4px 12px -3px rgba(37,99,235,.15)}
+.btn[disabled]{opacity:.55;pointer-events:none}
+.btn-go{background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;box-shadow:0 6px 20px -6px rgba(37,99,235,.5)}
+.btn-go:hover{background:linear-gradient(135deg,#1d4ed8,#1e40af);transform:translateY(-1px)}
+.divider{margin:16px 0 0;font-size:11px;color:#9aa7ba;letter-spacing:.4px}
+.disc{margin-top:18px;padding:11px 13px;background:#fffbeb;border:1px solid #fde68a;border-left-width:4px;border-radius:12px;font-size:11.5px;color:#92400e;text-align:left;line-height:1.5}
+.err{margin-bottom:12px;padding:10px 12px;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:10px;font-size:13px;display:none;text-align:left}
+.me{display:none;margin-bottom:14px;padding:12px;border-radius:12px;background:#ecfdf5;border:1px solid #a7f3d0;font-size:13.5px;color:#065f46}
+.me b{display:block;font-size:14.5px}
+.profiles{display:flex;flex-direction:column;gap:9px;max-height:300px;overflow:auto;margin-bottom:8px}
+.prof{display:flex;align-items:center;gap:12px;padding:11px 13px;border:1.5px solid #e6edf6;border-radius:14px;cursor:pointer;background:#fff;text-align:left;transition:.15s}
+.prof:hover{border-color:#93c5fd;background:#f4f8ff;transform:translateY(-1px)}
+.prof .av{width:38px;height:38px;border-radius:50%;background:linear-gradient(135deg,#2563eb,#1e40af);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:800;font-size:13px;flex-shrink:0}
+.prof .nm{font-weight:800;font-size:14px}
+.prof .meta{font-size:12px;color:#7c8aa0;margin-top:2px}
+.form{display:none;text-align:left;margin-top:14px;border-top:1px dashed #e6edf6;padding-top:14px}
+.form.on{display:block}
+.fld{margin-bottom:10px}
+.fld label{display:block;font-size:11px;font-weight:700;color:#7c8aa0;margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px}
+.inp{width:100%;padding:10px 12px;border:1.5px solid #e3ecfb;border-radius:11px;font:600 13.5px Manrope,sans-serif;outline:none;font-family:inherit;color:#0f2b4e}
+.inp:focus{border-color:#93c5fd}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}
+.linkish{background:none;border:none;color:#2563eb;font:700 12.5px Manrope,sans-serif;cursor:pointer;margin-top:10px;font-family:inherit}
+</style>
+</head>
+<body>
+<div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div>
+<div class="card">
+  <img src="/img/emias-logo.png" alt="ЕМИАС" style="height:52px;margin-bottom:10px;border-radius:14px">
+  <div class="logo">ЕМИАС</div>
+
+  <div class="tabs">
+    <button class="tab" data-tab="citizen">Гражданин</button>
+    <button class="tab" data-tab="staff">Сотрудник</button>
+  </div>
+
+  <div class="err" id="err"></div>
+
+  <!-- ─── ГРАЖДАНИН ─── -->
+  <div class="pane" id="pane-citizen">
+    <div class="me" id="ctz-me"></div>
+    <div id="ctz-entry">
+      <h1>Вход для граждан</h1>
+      <p class="sub">Введите код из Discord-бота.<br>В Discord: <b>/емиас</b> → <b>Код для сайта</b></p>
+      <div class="fld" style="margin-top:14px">
+        <label>Код из Discord</label>
+        <input class="inp" id="ctz-code" placeholder="ABC123" maxlength="6" style="text-transform:uppercase;letter-spacing:3px;text-align:center;font-size:18px;font-weight:800">
+      </div>
+      <button class="btn btn-go" id="ctz-code-btn">Войти по коду</button>
+      <div class="divider">Код одноразовый, действует 10 минут</div>
+      <button class="btn btn-dev" id="ctz-dev" style="display:none">Демо-вход (dev)</button>
+    </div>
+
+    <!-- Выбор персонажа -->
+    <div id="ctz-pick" style="display:none">
+      <h1>Выберите персонажа</h1>
+      <p class="sub">Аккаунт подтверждён. Кем играете?</p>
+      <div class="profiles" id="prof-list"></div>
+      <button class="linkish" id="btn-newchar">+ Создать нового персонажа</button>
+      <button class="linkish" id="btn-ctz-out" style="color:#b91c1c">Выйти из аккаунта</button>
+    </div>
+
+    <!-- Создание персонажа -->
+    <div class="form" id="newchar-form">
+      <div class="fld"><label>ФИО *</label><input class="inp" id="nc-fio" placeholder="Иванов Иван Иванович"></div>
+      <div class="grid2">
+        <div class="fld"><label>Дата рождения</label><input type="date" class="inp" id="nc-birth"></div>
+        <div class="fld"><label>Пол</label><select class="inp" id="nc-sex"><option value="">—</option><option>Мужской</option><option>Женский</option></select></div>
+      </div>
+      <div class="fld"><label>Полис ОМС</label><input class="inp" id="nc-oms" placeholder="16 цифр"></div>
+      <div class="fld"><label>Телефон</label><input class="inp" id="nc-phone"></div>
+      <button class="btn btn-go" id="nc-save">Создать и войти</button>
+    </div>
+  </div>
+
+  <!-- ─── СОТРУДНИК ─── -->
+  <div class="pane" id="pane-staff">
+    <div class="me" id="staff-me"></div>
+    <h1>Вход для сотрудников</h1>
+    <p class="sub">Регистратура, врачи и главный врач.<br>Вход через Discord.</p>
+    <a class="btn btn-discord" id="st-discord" href="/auth/discord">
+      <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor"><path d="M20.3 4.4A19.8 19.8 0 0 0 15.9 3l-.2.4c1.6.4 2.9 1 4.2 1.9a16.2 16.2 0 0 0-14 0C7.2 4.4 8.6 3.8 10 3.4L9.9 3a19.8 19.8 0 0 0-4.4 1.4C2.8 8.6 2 12.7 2.4 16.7A20 20 0 0 0 8 19.6l1-1.6c-.9-.3-1.7-.7-2.5-1.2l.6-.5a14.3 14.3 0 0 0 12 0l.6.5c-.8.5-1.6.9-2.5 1.2l1 1.6a20 20 0 0 0 5.7-2.9c.4-4.6-.7-8.6-3.6-12.3ZM8.7 14.2c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.9.9 1.8 2c0 1.1-.8 2-1.8 2Zm6.6 0c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.9.9 1.8 2c0 1.1-.8 2-1.8 2Z"/></svg>
+      Войти через Discord
+    </a>
+    <button class="btn btn-dev" id="st-dev" style="display:none">Войти в демо-режиме (dev)</button>
+  </div>
+
+  <div class="disc">Данный сайт не является официальным ресурсом. Проект создан исключительно для RP-проекта. Все персонажи и события вымышлены.</div>
+</div>
+
+<footer class="site-footer" style="position:fixed;bottom:0;left:0;right:0;z-index:1">
+  <div class="footer-cols">
+    <div class="footer-col">
+      <h4>Discord</h4>
+      <div><a href="https://discord.gg/Ruu9fmd7xs" target="_blank">discord.gg/Ruu9fmd7xs</a></div>
+    </div>
+    <div class="footer-col">
+      <h4>Поддержка</h4>
+      <div><a href="https://discord.com/channels/1465040282037784667/1465040285938487371" target="_blank">Канал тикетов</a></div>
+    </div>
+  </div>
+  <div class="footer-credit">Разработка сайта: gagegaming99</div>
+  <div class="footer-disclaimer">Данный сайт не является официальным ресурсом. Проект создан исключительно для RP-проекта.</div>
+</footer>
+
+<script>
+(function(){
+'use strict';
+var qs=new URLSearchParams(location.search);
+function $(id){return document.getElementById(id);}
+function showError(t){var e=$('err');e.textContent=t;e.style.display='block';}
+function jget(url,cb){fetch(url,{credentials:'same-origin'}).then(function(r){r.json().then(function(d){cb(r.status,d);}).catch(function(){cb(r.status,{});});}).catch(function(){cb(0,{});});}
+
+/* Вкладки */
+var initialTab=qs.get('tab')==='staff'?'staff':(qs.get('tab')==='citizen'?'citizen':'citizen');
+function setTab(name){
+  document.querySelectorAll('.tab').forEach(function(t){t.classList.toggle('on',t.dataset.tab===name);});
+  $('pane-citizen').classList.toggle('on',name==='citizen');
+  $('pane-staff').classList.toggle('on',name==='staff');
+}
+document.querySelectorAll('.tab').forEach(function(t){t.addEventListener('click',function(){setTab(t.dataset.tab);});});
+setTab(initialTab);
+
+/* Ошибки из URL */
+if(qs.get('error')){
+  showError({oauth_not_configured:'OAuth2 Discord не настроен (.env)',
+    oauth_state:'Ошибка проверки состояния, повторите вход',
+    oauth_failed:'Не удалось войти через Discord',
+    blocked:'Аккаунт заблокирован администрацией',
+    auth:'Сессия истекла — войдите заново и выберите персонажа',
+    net:'Сервер недоступен, попробуйте ещё раз'}[qs.get('error')]||('Ошибка: '+qs.get('error')));
+}
+
+/* Общая настройка */
+jget('/api/setup',function(st,s){
+  if(s.oauthConfigured===false){
+    var d=$('ctz-discord'),s2=$('st-discord');
+    [d,s2].forEach(function(a){if(a){a.removeAttribute('href');a.style.opacity='.55';}});
+    var note=document.createElement('div');
+    note.style.cssText='font-size:11.5px;color:#9aa7ba;margin-top:8px';
+    note.textContent='Discord OAuth не настроен (.env)';
+    d&&d.parentNode.insertBefore(note,d.nextSibling);
+  }
+  if(s.devLoginEnabled){$('ctz-dev').style.display='flex';$('st-dev').style.display='flex';}
+});
+
+/* Персонал */
+$('st-dev').addEventListener('click',function(){
+  var b=$('st-dev');b.disabled=true;b.textContent='Вход…';
+  fetch('/auth/dev-login',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'})
+  .then(function(r){return r.json();})
+  .then(function(d){if(d.ok){location.href='/staff.html';}else{b.disabled=false;b.textContent='Войти в демо-режиме (dev)';showError(d.error||'Ошибка');}})
+  .catch(function(){b.disabled=false;b.textContent='Войти в демо-режиме (dev)';});
+});
+jget('/api/me',function(st,d){
+  if(st===200&&d.user){
+    var m=$('staff-me');m.style.display='block';
+    m.innerHTML='Вы вошли как <b></b><span></span>';
+    m.querySelector('b').textContent=d.user.full_name;
+    m.querySelector('span').textContent=' · '+d.user.role;
+    m.insertAdjacentHTML('beforeend','<button class="btn btn-go" style="margin-top:10px;padding:11px" onclick="location.href=\'/staff.html\'">Открыть панель сотрудника</button>');
+  }
+});
+
+/* Гражданин */
+function initials(fio){var p=(fio||' ').split(/\s+/);return((p[0]||' ')[0]+(p[1]||'')[0]||(p[0]||' ')[0]||'?').toUpperCase();}
+function loadProfiles(){
+  jget('/api/citizen/profiles',function(st,d){
+    if(st!==200){showError((d&&d.error)||'Не удалось загрузить профили');return;}
+    var list=$('prof-list');list.innerHTML='';
+    (d.profiles||[]).forEach(function(p){
+      var card=document.createElement('div');
+      card.className='prof';
+      card.innerHTML='<div class="av">'+initials(p.fullName)+'</div><div><div class="nm"></div><div class="meta"></div></div>';
+      card.querySelector('.nm').textContent=p.fullName;
+      card.querySelector('.meta').textContent=(p.cardNumber||'')+(p.birthDate?' · '+p.birthDate.split('-').reverse().join('.'):'');
+      card.addEventListener('click',function(){selectProfile(p.id);});
+      list.appendChild(card);
+    });
+    if(!(d.profiles||[]).length){
+      list.innerHTML='<div style="color:#7c8aa0;font-size:13px;padding:8px 0">У аккаунта пока нет персонажей — создайте первого.</div>';
+      toggleNewChar(true);
+    }
+    $('ctz-entry').style.display='none';
+    $('ctz-pick').style.display='block';
+  });
+}
+function selectProfile(id){
+  fetch('/api/citizen/select',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({patientId:id})})
+  .then(function(r){return r.json();})
+  .then(function(d){if(d.ok){location.href='/';}else{showError(d.error||'Ошибка выбора');}})
+  .catch(function(){showError('Ошибка соединения');});
+}
+function citizenAuthed(meData){
+  $('ctz-entry').style.display='none';
+  var m=$('ctz-me');m.style.display='block';
+  m.innerHTML='Аккаунт: <b></b><span></span>';
+  m.querySelector('b').textContent=meData.account.username||meData.account.discordId;
+  m.querySelector('span').textContent=meData.patient?(' · персонаж: '+meData.patient.fullName):' · персонаж не выбран';
+  loadProfiles();
+}
+$('ctz-code-btn').addEventListener('click',function(){
+  var b=$('ctz-code-btn'),code=$('ctz-code').value.trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if(!code){showError('Введите код из Discord');return;}
+  b.disabled=true;b.textContent='Проверка…';
+  fetch('/api/citizen/auth/code',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:code})})
+  .then(function(r){return r.json().then(function(d){return{status:r.status,data:d};});})
+  .then(function(res){
+    if(res.data&&res.data.ok){
+      if(res.data.isStaff){location.href='/staff.html';} else {location.reload();}
+    } else {b.disabled=false;b.textContent='Войти по коду';showError((res.data&&res.data.error)||'Неверный код');}
+  })
+  .catch(function(){b.disabled=false;b.textContent='Войти по коду';showError('Ошибка соединения');});
+});
+$('ctz-code').addEventListener('keydown',function(e){if(e.key==='Enter'){$('ctz-code-btn').click();}});
+$('ctz-dev').addEventListener('click',function(){
+  var b=$('ctz-dev');b.disabled=true;b.textContent='Вход…';
+  fetch('/api/citizen/dev-auth',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'})
+  .then(function(r){return r.json().then(function(d){return{status:r.status,data:d};});})
+  .then(function(res){
+    if(res.status<400){citizenAuthed({account:{username:'dev-local'}});}
+    else{b.disabled=false;b.textContent='Демо-вход (dev)';showError((res.data&&res.data.error)||'Ошибка');}
+  })
+  .catch(function(){b.disabled=false;b.textContent='Демо-вход (dev)';});
+});
+jget('/api/citizen/state',function(st,d){
+  if(st===200&&d.authed){
+    citizenAuthed(d);
+  } else if(qs.get('authed')==='1'){
+    loadProfiles();
+  }
+});
+$('btn-newchar').addEventListener('click',function(){toggleNewChar();});
+function toggleNewChar(force){
+  var f=$('newchar-form');
+  f.classList.toggle('on',force===true?!f.classList.contains('on'):!f.classList.contains('on'));
+  if(f.classList.contains('on'))$('nc-fio').focus();
+}
+$('btn-ctz-out').addEventListener('click',function(){
+  fetch('/api/citizen/logout',{method:'POST',credentials:'same-origin'}).then(function(){location.reload();});
+});
+$('nc-save').addEventListener('click',function(){
+  var b=$('nc-save'),fio=$('nc-fio').value.trim();
+  if(!fio){showError('Укажите ФИО персонажа');return;}
+  b.disabled=true;b.textContent='Создание…';
+  fetch('/api/citizen/profiles',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({fullName:fio,birthDate:$('nc-birth').value||null,
+      sex:$('nc-sex').value||null,omsNumber:$('nc-oms').value.trim()||null,phone:$('nc-phone').value.trim()||null})})
+  .then(function(r){return r.json().then(function(d){return{status:r.status,data:d};});})
+  .then(function(res){
+    if(res.status===201){location.href='/';}
+    else{b.disabled=false;b.textContent='Создать и войти';showError((res.data&&res.data.error)||'Ошибка создания');}
+  })
+  .catch(function(){b.disabled=false;b.textContent='Создать и войти';});
+});
+})();
+</script>
+</body>
+</html>
