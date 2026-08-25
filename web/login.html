@@ -111,11 +111,13 @@ h1{font-size:18px;margin:2px 0 6px}
   <div class="pane" id="pane-staff">
     <div class="me" id="staff-me"></div>
     <h1>Вход для сотрудников</h1>
-    <p class="sub">Регистратура, врачи и главный врач.<br>Вход через Discord.</p>
-    <a class="btn btn-discord" id="st-discord" href="/auth/discord">
-      <svg width="19" height="19" viewBox="0 0 24 24" fill="currentColor"><path d="M20.3 4.4A19.8 19.8 0 0 0 15.9 3l-.2.4c1.6.4 2.9 1 4.2 1.9a16.2 16.2 0 0 0-14 0C7.2 4.4 8.6 3.8 10 3.4L9.9 3a19.8 19.8 0 0 0-4.4 1.4C2.8 8.6 2 12.7 2.4 16.7A20 20 0 0 0 8 19.6l1-1.6c-.9-.3-1.7-.7-2.5-1.2l.6-.5a14.3 14.3 0 0 0 12 0l.6.5c-.8.5-1.6.9-2.5 1.2l1 1.6a20 20 0 0 0 5.7-2.9c.4-4.6-.7-8.6-3.6-12.3ZM8.7 14.2c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.9.9 1.8 2c0 1.1-.8 2-1.8 2Zm6.6 0c-1 0-1.8-.9-1.8-2s.8-2 1.8-2 1.9.9 1.8 2c0 1.1-.8 2-1.8 2Z"/></svg>
-      Войти через Discord
-    </a>
+    <p class="sub">Регистратура, врачи и главный врач.<br>Код из Discord: <b>/емиас</b> → <b>Код для сайта</b></p>
+    <div class="fld" style="margin-top:14px">
+      <label>Код из Discord</label>
+      <input class="inp" id="st-code" placeholder="ABC123" maxlength="6" style="text-transform:uppercase;letter-spacing:3px;text-align:center;font-size:18px;font-weight:800">
+    </div>
+    <button class="btn btn-go" id="st-code-btn">Войти по коду</button>
+    <div class="divider">Код одноразовый, 10 минут</div>
     <button class="btn btn-dev" id="st-dev" style="display:none">Войти в демо-режиме (dev)</button>
   </div>
 
@@ -247,6 +249,20 @@ $('ctz-code-btn').addEventListener('click',function(){
   .catch(function(){b.disabled=false;b.textContent='Войти по коду';showError('Ошибка соединения');});
 });
 $('ctz-code').addEventListener('keydown',function(e){if(e.key==='Enter'){$('ctz-code-btn').click();}});
+$('st-code-btn').addEventListener('click',function(){
+  var b=$('st-code-btn'),code=$('st-code').value.trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if(!code){showError('Введите код из Discord');return;}
+  b.disabled=true;b.textContent='Проверка…';
+  fetch('/api/citizen/auth/code',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:code})})
+  .then(function(r){return r.json().then(function(d){return{status:r.status,data:d};});})
+  .then(function(res){
+    if(res.data&&res.data.ok){
+      location.href='/staff.html';
+    } else {b.disabled=false;b.textContent='Войти по коду';showError((res.data&&res.data.error)||'Неверный код');}
+  })
+  .catch(function(){b.disabled=false;b.textContent='Войти по коду';showError('Ошибка соединения');});
+});
+$('st-code').addEventListener('keydown',function(e){if(e.key==='Enter'){$('st-code-btn').click();}});
 $('ctz-dev').addEventListener('click',function(){
   var b=$('ctz-dev');b.disabled=true;b.textContent='Вход…';
   fetch('/api/citizen/dev-auth',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:'{}'})
