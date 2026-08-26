@@ -217,18 +217,31 @@ router.post('/api/citizen/dev-auth', async (req, res) => {
     });
   }
 
-  const patientId = Number(req.body?.patientId || 0);
   let sessionPatient = null;
-  if (patientId) {
-    sessionPatient = await prisma.patients.findUnique({ where: { id: patientId } });
-    if (!sessionPatient) return res.status(404).json({ error: 'Персонаж не найден' });
-    if (sessionPatient.status === 'blocked') return res.status(403).json({ error: 'Аккаунт заблокирован' });
+  const existingPatient = await prisma.patients.findFirst({ where: { discordId: DEV_DISCORD_ID, status: 'active' } });
+  if (existingPatient) {
+    sessionPatient = existingPatient;
+  } else {
+    const cardNumber = await nextCardNumber();
+    sessionPatient = await prisma.patients.create({
+      data: {
+        cardNumber,
+        fullName: 'Демов Демон Демонович',
+        birthDate: '1990-05-15',
+        sex: 'М',
+        omsNumber: '7700000000000001',
+        bloodGroup: 'I (O) Rh+',
+        phone: '+7 (999) 000-00-00',
+        discordId: DEV_DISCORD_ID,
+        status: 'active',
+      },
+    });
   }
 
   const isSecure = env.PUBLIC_BASE_URL.startsWith('https');
   const sessionAccount = { id: account.id, discordId: account.discordId, username: account.discordUsername, avatar: null };
   const session = citizenSessions.createSession(sessionAccount, sessionPatient, isSecure);
-  audit({ action: 'citizen.dev_login', entityType: 'patient', entityId: patientId || null, ip: req.ip });
+  audit({ action: 'citizen.dev_login', entityType: 'patient', entityId: sessionPatient.id, ip: req.ip });
   res.setHeader('Set-Cookie', session.cookie);
   res.json({ ok: true });
 });

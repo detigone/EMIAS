@@ -262,10 +262,22 @@ router.post('/auth/dev-login', async (req, res) => {
     return res.status(403).json({ error: 'Неверный пароль демо' });
   }
   const userId = Number(req.body?.userId || 0);
-  const user = userId
+  let user = userId
     ? await prisma.users.findUnique({ where: { id: userId, isActive: true } })
     : (await prisma.users.findMany({ where: { isActive: true }, take: 1, orderBy: { id: 'asc' } }))[0];
-  if (!user) return res.status(404).json({ error: 'Демо-пользователи не найдены (npm run db:seed)' });
+
+  if (!user) {
+    user = await prisma.users.create({
+      data: {
+        discordId: 'dev-staff-' + Date.now(),
+        discordUsername: 'dev-doctor',
+        fullName: 'Демов Иван Петрович',
+        specialty: 'terapevt',
+        role: ROLES.PHYSICIAN,
+        status: 'free',
+      },
+    });
+  }
 
   const isSecure = env.PUBLIC_BASE_URL.startsWith('https');
   const session = sessions.createSession(
