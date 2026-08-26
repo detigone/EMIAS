@@ -835,6 +835,7 @@
     injectExtraStyles();
     api('GET', '/api/me').then(function (d) {
       user = d.user;
+      if (user && user.needsSetup) { location.href = '/setup.html'; return; }
       renderShell();
     }).catch(function (e) {
       if (e.status === 401) { location.href = '/login.html'; return; }

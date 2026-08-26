@@ -172,7 +172,7 @@ router.post('/api/citizen/auth/code', async (req, res) => {
   let staffCookie = null;
   const staffUser = await prisma.users.findUnique({ where: { discordId: row.discordId } });
   if (staffUser && staffUser.isActive) {
-    const staffSess = staffSessions.createSession(staffUser.id, isSecure);
+    const staffSess = staffSessions.createSession({ id: staffUser.id, discord_id: staffUser.discordId, discord_username: staffUser.discordUsername, discord_avatar: staffUser.discordAvatar, full_name: staffUser.fullName, specialty: staffUser.specialty, role: staffUser.role, status: staffUser.status, is_active: staffUser.isActive }, isSecure);
     staffCookie = staffSess.cookie;
     audit({ action: 'staff.site_code', entityType: 'user', entityId: staffUser.id, details: { code, discordId: row.discordId }, ip: req.ip });
   }

@@ -1,11 +1,12 @@
 /**
  * Аутентификация и профиль.
- *   GET  /auth/discord    — редирект на согласие Discord (state + PKCE)
- *   GET  /auth/callback   — обмен code, создание/обновление врача, сессия
- *   POST /auth/logout     — отзыв сессии
- *   GET  /api/me          — текущий пользователь
- *   GET  /api/setup       — публичная информация о состоянии настройки
- *   POST /auth/dev-login  — ТОЛЬКО для локальной разработки (DEV_LOGIN=1)
+ *   GET    /auth/discord    — редирект на согласие Discord (state + PKCE)
+ *   GET    /auth/callback   — обмен code, создание/обновление врача, сессия
+ *   POST   /auth/logout     — отзыв сессии
+ *   GET    /api/me          — текущий пользователь (+ needsSetup)
+ *   GET    /api/setup       — публичная информация о состоянии настройки
+ *   POST   /api/setup       — заполнение профиля (ФИО + специальность)
+ *   POST   /auth/dev-login  — ТОЛЬКО для локальной разработки (DEV_LOGIN=1)
  */
 
 const express = require('express');
@@ -16,7 +17,8 @@ const citizenSessions = require('../auth/citizen-sessions');
 const { requireAuth } = require('../middleware/rbac');
 const { audit } = require('../services/audit');
 const { prisma } = require('../db/connection');
-const { ROLES, PROJECT } = require('../../shared/constants');
+const { ROLES, PROJECT, SPECIALTIES } = require('../../shared/constants');
+const { nextCardNumber } = require('../services/documents');
 
 const router = express.Router();
 const OAUTH_STATE_COOKIE = 'emias_oauth_state';
@@ -87,7 +89,7 @@ router.get('/auth/callback', async (req, res) => {
           },
         });
       }
-      const citizenSession = citizenSessions.createSession(account.id, null, isSecure);
+      const citizenSession = citizenSessions.createSession({ id: account.id, discordId: account.discordId, username: account.discordUsername, avatar: account.discordAvatar }, null, isSecure);
       audit({
         action: 'citizen.login',
         entityType: 'citizen_account',
@@ -127,6 +129,30 @@ router.get('/auth/callback', async (req, res) => {
       });
     }
 
+    let citizenAccount = await prisma.citizenAccount.findUnique({ where: { discordId: profile.id } });
+    if (!citizenAccount) {
+      citizenAccount = await prisma.citizenAccount.create({
+        data: {
+          discordId: profile.id,
+          discordUsername: profile.username,
+          discordAvatar: profile.avatar,
+          lastLoginAt: new Date(),
+        },
+      });
+    } else {
+      await prisma.citizenAccount.update({
+        where: { id: citizenAccount.id },
+        data: {
+          discordUsername: profile.username,
+          discordAvatar: profile.avatar,
+          lastLoginAt: new Date(),
+        },
+      });
+    }
+
+    const existingPatient = await prisma.patients.findFirst({ where: { discordId: profile.id } });
+    const needsSetup = !user.specialty || !existingPatient;
+
     const session = sessions.createSession(
       { id: user.id, discord_id: user.discordId, discord_username: user.discordUsername, discord_avatar: user.discordAvatar, full_name: user.fullName, specialty: user.specialty, role: user.role, status: user.status, is_active: user.isActive },
       isSecure
@@ -139,7 +165,7 @@ router.get('/auth/callback', async (req, res) => {
       cookieParts(OAUTH_VERIFIER_COOKIE, '', 0, isSecure),
       cookieParts(OAUTH_MODE_COOKIE, '', 0, isSecure),
     ]);
-    return res.redirect('/staff.html');
+    return res.redirect(needsSetup ? '/setup.html' : '/staff.html');
   } catch (err) {
     console.error('[auth] callback error:', err.message);
     return backWithError('oauth_failed');
@@ -164,11 +190,70 @@ router.get('/api/setup', (req, res) => {
     disclaimer: PROJECT.DISCLAIMER,
     oauthConfigured: env.isOauthConfigured,
     devLoginEnabled: env.DEV_LOGIN,
+    specialties: SPECIALTIES,
   });
 });
 
-router.get('/api/me', requireAuth, (req, res) => {
-  res.json({ user: req.user });
+router.post('/api/setup', requireAuth, async (req, res) => {
+  try {
+    const { step } = req.body || {};
+    const discordId = req.user.discord_id;
+
+    if (step === 'profile') {
+      const { fullName, birthDate, sex, omsNumber, phone } = req.body;
+      if (!fullName || !fullName.trim()) {
+        return res.status(400).json({ error: 'ФИО обязательно' });
+      }
+
+      const existing = await prisma.patients.findFirst({ where: { discordId } });
+      if (existing) {
+        return res.status(409).json({ error: 'Профиль уже создан' });
+      }
+
+      const cardNumber = await nextCardNumber();
+      const patient = await prisma.patients.create({
+        data: {
+          cardNumber,
+          fullName: fullName.trim(),
+          birthDate: birthDate || null,
+          sex: sex || null,
+          omsNumber: omsNumber || null,
+          phone: phone || null,
+          discordId,
+          status: 'active',
+          createdBy: req.user.id,
+        },
+      });
+
+      audit({ actorId: req.user.id, action: 'profile.created', entityType: 'patient', entityId: patient.id, ip: req.ip });
+      return res.json({ ok: true, patient: { id: patient.id, fullName: patient.fullName, cardNumber: patient.cardNumber } });
+    }
+
+    if (step === 'specialty') {
+      const { specialty } = req.body;
+      if (!specialty || !SPECIALTIES.find((s) => s.code === specialty)) {
+        return res.status(400).json({ error: 'Неверная специальность' });
+      }
+
+      await prisma.users.update({
+        where: { id: req.user.id },
+        data: { specialty },
+      });
+
+      audit({ actorId: req.user.id, action: 'profile.specialty_set', entityType: 'user', entityId: req.user.id, details: { specialty }, ip: req.ip });
+      return res.json({ ok: true, specialty });
+    }
+
+    return res.status(400).json({ error: 'Неизвестный шаг' });
+  } catch (err) {
+    console.error('[setup] error:', err.message);
+    return res.status(500).json({ error: 'Ошибка сервера' });
+  }
+});
+
+router.get('/api/me', requireAuth, async (req, res) => {
+  const patient = await prisma.patients.findFirst({ where: { discordId: req.user.discord_id } });
+  res.json({ user: { ...req.user, needsSetup: !req.user.specialty || !patient } });
 });
 
 router.post('/auth/dev-login', async (req, res) => {

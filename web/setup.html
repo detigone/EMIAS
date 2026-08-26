@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>ЕМИАС · Регистрация</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Manrope:wght@400;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{min-height:100vh;display:flex;align-items:center;justify-content:center;font-family:Manrope,system-ui,sans-serif;color:#0f2b4e;background:#f4f7fb;overflow:hidden;position:relative}
+.blob{position:absolute;border-radius:50%;filter:blur(70px);opacity:.55;pointer-events:none}
+.blob.b1{width:420px;height:420px;background:#93c5fd;top:-120px;left:-80px;animation:f1 16s ease-in-out infinite alternate}
+.blob.b2{width:360px;height:360px;background:#a5b4fc;bottom:-100px;right:-60px;animation:f2 19s ease-in-out infinite alternate}
+.blob.b3{width:280px;height:280px;background:#67e8f9;top:55%;left:60%;animation:f3 22s ease-in-out infinite alternate}
+@keyframes f1{from{transform:translate(0,0) scale(1)}to{transform:translate(60px,40px) scale(1.15)}}
+@keyframes f2{from{transform:translate(0,0) scale(1.05)}to{transform:translate(-50px,-30px) scale(.92)}}
+@keyframes f3{from{transform:translate(0,0)}to{transform:translate(-70px,30px) scale(1.1)}}
+.card{position:relative;z-index:2;width:min(480px,94vw);background:rgba(255,255,255,.92);backdrop-filter:blur(14px);border:1px solid #e6edf6;border-radius:26px;box-shadow:0 24px 60px -24px rgba(31,64,135,.35);padding:34px 34px 28px;text-align:center;animation:pop .35s ease}
+@keyframes pop{from{opacity:0;transform:scale(.96) translateY(10px)}to{opacity:1;transform:none}}
+.logo{font-size:25px;font-weight:800;background:linear-gradient(135deg,#2563eb,#1e40af);-webkit-background-clip:text;background-clip:text;-webkit-text-fill-color:transparent}
+.tag{display:inline-block;margin-top:5px;font-size:11px;font-weight:700;letter-spacing:.6px;text-transform:uppercase;color:#2563eb;background:#eff6ff;border-radius:999px;padding:4px 12px}
+h1{font-size:20px;margin:18px 0 4px;font-weight:800}
+.sub{color:#6b7a90;font-size:13px;margin:0 0 22px;line-height:1.5}
+.fld{margin-bottom:12px;text-align:left}
+.fld label{display:block;font-size:11px;font-weight:700;color:#7c8aa0;margin-bottom:4px;text-transform:uppercase;letter-spacing:.4px}
+.inp{width:100%;padding:11px 13px;border:1.5px solid #e3ecfb;border-radius:11px;font:600 13.5px Manrope,sans-serif;outline:none;font-family:inherit;color:#0f2b4e;transition:border-color .15s}
+.inp:focus{border-color:#93c5fd}
+.grid2{display:grid;grid-template-columns:1fr 1fr;gap:0 10px}
+.btn{display:flex;width:100%;align-items:center;justify-content:center;gap:10px;padding:14px 18px;border-radius:14px;font-weight:700;font-size:14.5px;text-decoration:none;cursor:pointer;border:none;transition:all .2s cubic-bezier(.4,0,.2,1);font-family:inherit;position:relative;overflow:hidden;margin-top:8px}
+.btn:active{transform:scale(.98)}
+.btn-go{background:linear-gradient(135deg,#2563eb,#1d4ed8);color:#fff;box-shadow:0 6px 20px -6px rgba(37,99,235,.5)}
+.btn-go:hover{background:linear-gradient(135deg,#1d4ed8,#1e40af);transform:translateY(-1px)}
+.btn[disabled]{opacity:.55;pointer-events:none}
+.btn-back{background:none;border:none;color:#7c8aa0;font:700 13px Manrope,sans-serif;cursor:pointer;padding:8px 0;font-family:inherit;transition:color .15s}
+.btn-back:hover{color:#2563eb}
+.err{margin-bottom:12px;padding:10px 12px;background:#fef2f2;border:1px solid #fecaca;color:#b91c1c;border-radius:10px;font-size:13px;display:none;text-align:left}
+.steps{display:flex;justify-content:center;gap:8px;margin-bottom:20px}
+.dot{width:10px;height:10px;border-radius:50%;background:#e3ecfb;transition:all .3s}
+.dot.active{background:#2563eb;transform:scale(1.2)}
+.dot.done{background:#22c55e}
+.step{display:none;animation:slideIn .3s ease}
+.step.active{display:block}
+@keyframes slideIn{from{opacity:0;transform:translateX(20px)}to{opacity:1;transform:none}}
+@keyframes slideOut{from{opacity:1;transform:translateX(0)}to{opacity:0;transform:translateX(-20px)}}
+.success-icon{width:80px;height:80px;border-radius:50%;background:linear-gradient(135deg,#22c55e,#16a34a);display:flex;align-items:center;justify-content:center;margin:0 auto 16px;animation:scaleIn .4s cubic-bezier(.175,.885,.32,1.275)}
+@keyframes scaleIn{from{transform:scale(0)}to{transform:scale(1)}}
+.success-icon svg{width:40px;height:40px;stroke:#fff;stroke-width:3;fill:none}
+.specialty-grid{display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-bottom:16px}
+.spec-btn{padding:12px 10px;border:2px solid #e3ecfb;border-radius:12px;background:#fff;cursor:pointer;font:600 13px Manrope,sans-serif;color:#0f2b4e;transition:all .15s;font-family:inherit;text-align:center}
+.spec-btn:hover{border-color:#93c5fd;background:#f4f8ff}
+.spec-btn.selected{border-color:#2563eb;background:#eff6ff;color:#1d4ed8}
+.spec-btn .spec-name{display:block;font-weight:700;margin-bottom:2px}
+.spec-btn .spec-code{display:block;font-size:10px;color:#7c8aa0;font-weight:600}
+.disc{margin-top:18px;padding:11px 13px;background:#fffbeb;border:1px solid #fde68a;border-left-width:4px;border-radius:12px;font-size:11.5px;color:#92400e;text-align:left;line-height:1.5}
+</style>
+</head>
+<body>
+<div class="blob b1"></div><div class="blob b2"></div><div class="blob b3"></div>
+<div class="card">
+  <img src="/img/emias-logo.png" alt="ЕМИАС" style="height:52px;margin-bottom:10px;border-radius:14px">
+  <div class="logo">ЕМИАС</div>
+  <div class="tag">Регистрация сотрудника</div>
+
+  <div class="steps" id="steps-indicator">
+    <div class="dot active" data-step="1"></div>
+    <div class="dot" data-step="2"></div>
+  </div>
+
+  <div class="err" id="err"></div>
+
+  <!-- Шаг 1: Профиль гражданина -->
+  <div class="step active" id="step-1">
+    <h1>Заполните профиль</h1>
+    <p class="sub">Укажите ваши данные для доступа к медицинской системе.</p>
+    <div class="fld"><label>ФИО *</label><input class="inp" id="sf-fio" placeholder="Иванов Иван Иванович"></div>
+    <div class="grid2">
+      <div class="fld"><label>Дата рождения</label><input type="date" class="inp" id="sf-birth"></div>
+      <div class="fld"><label>Пол</label><select class="inp" id="sf-sex"><option value="">—</option><option value="М">Мужской</option><option value="Ж">Женский</option></select></div>
+    </div>
+    <div class="fld"><label>Полис ОМС</label><input class="inp" id="sf-oms" placeholder="16 цифр"></div>
+    <div class="fld"><label>Телефон</label><input class="inp" id="sf-phone" placeholder="+7 (___) ___-__-__"></div>
+    <button class="btn btn-go" id="btn-profile">Далее →</button>
+  </div>
+
+  <!-- Шаг 2: Специальность -->
+  <div class="step" id="step-2">
+    <h1>Выберите специальность</h1>
+    <p class="sub">Кем вы работаете в медицинском учреждении?</p>
+    <div class="specialty-grid" id="spec-grid"></div>
+    <button class="btn btn-go" id="btn-specialty" disabled>Завершить</button>
+    <button class="btn-back" id="btn-back-2">← Назад</button>
+  </div>
+
+  <!-- Готово -->
+  <div class="step" id="step-done">
+    <div class="success-icon">
+      <svg viewBox="0 0 24 24"><polyline points="20 6 9 17 4 12"></polyline></svg>
+    </div>
+    <h1>Готово!</h1>
+    <p class="sub" id="done-text">Профиль заполнен. Перенаправление…</p>
+  </div>
+
+  <div class="disc">Данный сайт не является официальным ресурсом. Проект создан исключительно для RP-проекта.</div>
+</div>
+
+<script>
+(function(){
+'use strict';
+function $(id){return document.getElementById(id);}
+function showError(t){var e=$('err');e.textContent=t;e.style.display='block';}
+function hideError(){$('err').style.display='none';}
+
+var currentStep=1;
+var specialties=[];
+var selectedSpec=null;
+var userRole=null;
+var discordName='';
+
+function setStep(n){
+  document.querySelectorAll('.step').forEach(function(s){s.classList.remove('active');});
+  document.querySelectorAll('.dot').forEach(function(d){
+    var sn=parseInt(d.dataset.step);
+    d.classList.remove('active','done');
+    if(sn===n) d.classList.add('active');
+    else if(sn<n) d.classList.add('done');
+  });
+  var el=$('step-'+n);
+  if(el) el.classList.add('active');
+  currentStep=n;
+}
+
+function jget(url,cb){fetch(url,{credentials:'same-origin'}).then(function(r){r.json().then(function(d){cb(r.status,d);}).catch(function(){cb(0,{});});}).catch(function(){cb(0,{});});}
+
+jget('/api/me',function(st,d){
+  if(st!==200||!d.user){showError('Не удалось загрузить профиль. Войдите заново.');return;}
+  var u=d.user;
+  userRole=u.role;
+  discordName=u.discord_username||'';
+  if(!u.needsSetup){location.href='/staff.html';return;}
+  $('sf-fio').value=u.full_name||'';
+});
+
+jget('/api/setup',function(st,d){
+  specialties=d.specialties||[];
+  renderSpecialties();
+});
+
+function renderSpecialties(){
+  var grid=$('spec-grid');grid.innerHTML='';
+  specialties.forEach(function(s){
+    var btn=document.createElement('button');
+    btn.className='spec-btn';
+    btn.innerHTML='<span class="spec-name">'+s.name+'</span><span class="spec-code">'+s.code+'</span>';
+    btn.addEventListener('click',function(){
+      document.querySelectorAll('.spec-btn').forEach(function(b){b.classList.remove('selected');});
+      btn.classList.add('selected');
+      selectedSpec=s.code;
+      $('btn-specialty').disabled=false;
+    });
+    grid.appendChild(btn);
+  });
+}
+
+$('btn-profile').addEventListener('click',function(){
+  hideError();
+  var fio=$('sf-fio').value.trim();
+  if(!fio){showError('Укажите ФИО');return;}
+  var b=$('btn-profile');b.disabled=true;b.textContent='Сохранение…';
+  fetch('/api/setup',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({step:'profile',fullName:fio,birthDate:$('sf-birth').value||null,
+      sex:$('sf-sex').value||null,omsNumber:$('sf-oms').value.trim()||null,phone:$('sf-phone').value.trim()||null})})
+  .then(function(r){return r.json().then(function(d){return{status:r.status,data:d};});})
+  .then(function(res){
+    b.disabled=false;b.textContent='Далее →';
+    if(res.status===200&&res.data.ok){
+      if(userRole==='Регистратор'){showDone();}else{setStep(2);}
+    } else {showError((res.data&&res.data.error)||'Ошибка сохранения');}
+  })
+  .catch(function(){b.disabled=false;b.textContent='Далее →';showError('Ошибка соединения');});
+});
+
+$('btn-specialty').addEventListener('click',function(){
+  hideError();
+  if(!selectedSpec){showError('Выберите специальность');return;}
+  var b=$('btn-specialty');b.disabled=true;b.textContent='Сохранение…';
+  fetch('/api/setup',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({step:'specialty',specialty:selectedSpec})})
+  .then(function(r){return r.json().then(function(d){return{status:r.status,data:d};});})
+  .then(function(res){
+    b.disabled=false;b.textContent='Завершить';
+    if(res.status===200&&res.data.ok){showDone();}
+    else {showError((res.data&&res.data.error)||'Ошибка сохранения');}
+  })
+  .catch(function(){b.disabled=false;b.textContent='Завершить';showError('Ошибка соединения');});
+});
+
+$('btn-back-2').addEventListener('click',function(){setStep(1);});
+
+function showDone(){
+  setStep('done');
+  setTimeout(function(){location.href='/staff.html';},1500);
+}
+
+$('sf-fio').addEventListener('keydown',function(e){if(e.key==='Enter')$('btn-profile').click();});
+})();
+</script>
+</body>
+</html>
