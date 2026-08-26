@@ -1,12 +1,5 @@
-﻿'use strict';
-
-/**
- * Персонал, статусы врачей, справочники, аналитика и аудит.
- * Роутер монтируется с префиксом /api (см. server/index.js).
- */
-
-const express = require('express');
-const { getDb } = require('../db/connection');
+﻿const express = require('express');
+const { prisma } = require('../db/connection');
 const { requireAuth, requireRole, isAdmin } = require('../middleware/rbac');
 const { audit, recent: recentAudit } = require('../services/audit');
 const hub = require('../realtime/hub');
@@ -15,21 +8,21 @@ const { MKB10 } = require('../../shared/mkb10');
 
 const router = express.Router();
 
-// ---- Персонал (для расписания и назначения талонов) ----------------------------
-router.get('/staff', requireAuth, (req, res) => {
-  const db = getDb();
-  const rows = db
-    .prepare(
-      `SELECT id, full_name, specialty, role, status
-         FROM users WHERE is_active = 1 AND role IN (?, ?)
-        ORDER BY full_name`
-    )
-    .all(ROLES.PHYSICIAN, ROLES.HEAD_PHYSICIAN);
-  res.json({ staff: rows });
+router.get('/staff', requireAuth, async (req, res) => {
+  const rows = await prisma.users.findMany({
+    where: { isActive: true, role: { in: [ROLES.PHYSICIAN, ROLES.HEAD_PHYSICIAN] } },
+    orderBy: { fullName: 'asc' },
+    select: { id: true, fullName: true, specialty: true, role: true, status: true },
+  });
+  res.json({
+    staff: rows.map(u => ({
+      id: u.id, full_name: u.fullName, specialty: u.specialty,
+      role: u.role, status: u.status,
+    })),
+  });
 });
 
-// ---- Статус врача («Начать/завершить приём») -------------------------------------
-router.post('/staff/:id/status', requireAuth, (req, res) => {
+router.post('/staff/:id/status', requireAuth, async (req, res) => {
   if (Number(req.params.id) !== req.user.id && !isAdmin(req.user)) {
     return res.status(403).json({ error: 'Можно менять только свой статус' });
   }
@@ -37,12 +30,11 @@ router.post('/staff/:id/status', requireAuth, (req, res) => {
   if (!Object.values(DOCTOR_STATUS).includes(status)) {
     return res.status(400).json({ error: 'Недопустимый статус' });
   }
-  const db = getDb();
-  const user = db.prepare(`SELECT * FROM users WHERE id = ?`).get(Number(req.params.id));
+  const user = await prisma.users.findUnique({ where: { id: Number(req.params.id) } });
   if (!user) return res.status(404).json({ error: 'Сотрудник не найден' });
 
-  db.prepare(`UPDATE users SET status = ? WHERE id = ?`).run(status, user.id);
-  audit(db, {
+  await prisma.users.update({ where: { id: user.id }, data: { status } });
+  audit({
     actorId: req.user.id, action: 'staff.status', entityType: 'user',
     entityId: user.id, details: { status }, ip: req.ip,
   });
@@ -50,7 +42,6 @@ router.post('/staff/:id/status', requireAuth, (req, res) => {
   res.json({ ok: true, doctorId: user.id, status });
 });
 
-// ---- Справочник МКБ-10 (автодополнение диагнозов) -----------------------------------
 router.get('/mkb10', requireAuth, (req, res) => {
   const q = String(req.query.q || '').trim().toLowerCase();
   const result = q
@@ -63,58 +54,78 @@ router.get('/mkb10', requireAuth, (req, res) => {
   res.json({ entries: result });
 });
 
-// ---- Аналитика (только «Главный врач») ------------------------------------------------
-router.get('/stats', requireAuth, requireRole(ROLES.HEAD_PHYSICIAN), (req, res) => {
-  const db = getDb();
+router.get('/stats', requireAuth, requireRole(ROLES.HEAD_PHYSICIAN), async (req, res) => {
   const today = new Date().toISOString().slice(0, 10);
 
   const days = [];
   for (let i = 6; i >= 0; i--) {
     const d = new Date(Date.now() - i * 864e5).toISOString().slice(0, 10);
-    days.push({
-      date: d,
-      cnt: db.prepare(`SELECT COUNT(*) n FROM appointments WHERE date = ? AND status != 'cancelled'`).get(d).n,
+    const cnt = await prisma.appointment.count({
+      where: { date: d, status: { not: 'cancelled' } },
     });
+    days.push({ date: d, cnt });
   }
 
+  const monthPrefix = new Date().toISOString().slice(0, 7);
+
+  const [patientsTotal, patientsBlocked, staffTotal, ticketsToday, waitingToday, doneToday, recordsMonth] =
+    await Promise.all([
+      prisma.patients.count(),
+      prisma.patients.count({ where: { status: 'blocked' } }),
+      prisma.users.count({ where: { isActive: true } }),
+      prisma.appointment.count({ where: { date: today } }),
+      prisma.appointment.count({ where: { date: today, status: 'waiting' } }),
+      prisma.appointment.count({ where: { date: today, status: 'done' } }),
+      prisma.record.count({ where: { visitDate: { startsWith: monthPrefix } } }),
+    ]);
+
+  const appsForSpecialty = await prisma.appointment.findMany({
+    where: { date: today },
+    include: { doctor: { select: { specialty: true } } },
+  });
+  const specialtyMap = {};
+  for (const a of appsForSpecialty) {
+    const spec = a.doctor?.specialty || '—';
+    specialtyMap[spec] = (specialtyMap[spec] || 0) + 1;
+  }
+  const loadBySpecialty = Object.entries(specialtyMap)
+    .map(([specialty, cnt]) => ({ specialty, cnt }))
+    .sort((a, b) => b.cnt - a.cnt);
+
+  const diagRecords = await prisma.record.findMany({
+    where: { diagnosisCode: { not: null } },
+    select: { diagnosisCode: true, diagnosisText: true },
+  });
+  const diagMap = {};
+  for (const r of diagRecords) {
+    const key = r.diagnosisCode;
+    if (!diagMap[key]) diagMap[key] = { code: r.diagnosisCode, name: r.diagnosisText, cnt: 0 };
+    diagMap[key].cnt++;
+  }
+  const topDiagnoses = Object.values(diagMap)
+    .sort((a, b) => b.cnt - a.cnt)
+    .slice(0, 5);
+
   const stats = {
-    patientsTotal: db.prepare(`SELECT COUNT(*) n FROM patients`).get().n,
-    patientsBlocked: db.prepare(`SELECT COUNT(*) n FROM patients WHERE status = 'blocked'`).get().n,
-    staffTotal: db.prepare(`SELECT COUNT(*) n FROM users WHERE is_active = 1`).get().n,
-    ticketsToday: db.prepare(`SELECT COUNT(*) n FROM appointments WHERE date = ?`).get(today).n,
-    waitingToday: db.prepare(`SELECT COUNT(*) n FROM appointments WHERE date = ? AND status = 'waiting'`).get(today).n,
-    doneToday: db.prepare(`SELECT COUNT(*) n FROM appointments WHERE date = ? AND status = 'done'`).get(today).n,
-    recordsMonth: db
-      .prepare(`SELECT COUNT(*) n FROM emr_records WHERE substr(visit_date, 1, 7) = ?`)
-      .get(new Date().toISOString().slice(0, 7)).n,
+    patientsTotal, patientsBlocked, staffTotal,
+    ticketsToday, waitingToday, doneToday, recordsMonth,
     visitsByDay: days,
-    loadBySpecialty: db
-      .prepare(
-        `SELECT COALESCE(NULLIF(u.specialty, ''), '—') AS specialty, COUNT(*) cnt
-           FROM appointments a JOIN users u ON u.id = a.doctor_id
-          WHERE a.date = ? GROUP BY specialty ORDER BY cnt DESC`
-      )
-      .all(today),
-    topDiagnoses: db
-      .prepare(
-        `SELECT diagnosis_code AS code, diagnosis_text AS name, COUNT(*) cnt
-           FROM emr_records WHERE diagnosis_code IS NOT NULL
-          GROUP BY diagnosis_code ORDER BY cnt DESC LIMIT 5`
-      )
-      .all(),
+    loadBySpecialty,
+    topDiagnoses,
   };
 
   res.json({ stats });
 });
 
-// ---- Блокировка пациента (только «Главный врач») --------------------------------
-router.post('/patients/:id/block', requireAuth, requireRole(ROLES.HEAD_PHYSICIAN), (req, res) => {
-  const db = getDb();
-  const patient = db.prepare(`SELECT * FROM patients WHERE id = ?`).get(Number(req.params.id));
+router.post('/patients/:id/block', requireAuth, requireRole(ROLES.HEAD_PHYSICIAN), async (req, res) => {
+  const patient = await prisma.patients.findUnique({ where: { id: Number(req.params.id) } });
   if (!patient) return res.status(404).json({ error: 'Пациент не найден' });
   const blocked = Boolean(req.body?.blocked);
-  db.prepare(`UPDATE patients SET status = ? WHERE id = ?`).run(blocked ? 'blocked' : 'active', patient.id);
-  audit(db, {
+  await prisma.patients.update({
+    where: { id: patient.id },
+    data: { status: blocked ? 'blocked' : 'active' },
+  });
+  audit({
     actorId: req.user.id, action: blocked ? 'patient.block' : 'patient.unblock',
     entityType: 'patient', entityId: patient.id, ip: req.ip,
   });
@@ -122,9 +133,9 @@ router.post('/patients/:id/block', requireAuth, requireRole(ROLES.HEAD_PHYSICIAN
   res.json({ ok: true, status: blocked ? 'blocked' : 'active' });
 });
 
-// ---- Журнал аудита (только «Главный врач») -------------------------------------------------
-router.get('/audit', requireAuth, requireRole(ROLES.HEAD_PHYSICIAN), (req, res) => {
-  res.json({ entries: recentAudit(getDb(), Math.min(Number(req.query.limit || 50), 200)) });
+router.get('/audit', requireAuth, requireRole(ROLES.HEAD_PHYSICIAN), async (req, res) => {
+  const entries = await recentAudit(Math.min(Number(req.query.limit || 50), 200));
+  res.json({ entries });
 });
 
 module.exports = router;

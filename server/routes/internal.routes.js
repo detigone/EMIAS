@@ -1,26 +1,8 @@
-'use strict';
-
-/**
- * Внутренний API для Discord-бота. Бот — равноправный клиент без прямого
- * доступа к БД (см. шапку server/index.js). Каждый запрос обязан содержать
- * заголовок x-api-key со значением INTERNAL_API_KEY из .env.
- *
- *   GET  /internal/health
- *   GET  /internal/doctors                       — активные врачи
- *   GET  /internal/staff/:discordId              — сотрудник по Discord ID
- *   GET  /internal/citizens/:discordId           — персонажи Discord-аккаунта
- *   GET  /internal/patients/:id/card             — карточка: талоны/протоколы/рецепты
- *   POST /internal/patients/:id/tickets          — запись к врачу {doctorId?,date,time}
- *   POST /internal/tickets/:id/cancel            — отмена талона владельцем
- *   GET  /internal/queue?date=                   — очередь дня (для персонала в боте)
- *   GET  /internal/reminders?minutes=60          — приёмы, о которых пора напомнить
- */
-
 const express = require('express');
 const env = require('../env');
-const { getDb } = require('../db/connection');
+const { prisma } = require('../db/connection');
 const { audit } = require('../services/audit');
-const { nextTicketNumber } = require('../services/documents');
+const { nextTicketNumber, nextCardNumber } = require('../services/documents');
 const hub = require('../realtime/hub');
 const { WS_EVENTS } = require('../../shared/constants');
 const settingsStore = require('../services/settings');
@@ -34,13 +16,28 @@ router.use('/internal', (req, res, next) => {
   next();
 });
 
-const TICKET_SELECT = `
-  SELECT a.*, p.full_name AS patient_name, p.card_number AS patient_card,
-         p.discord_id AS patient_discord_id,
-         u.full_name AS doctor_name, u.specialty AS doctor_specialty
-    FROM appointments a
-    JOIN patients p ON p.id = a.patient_id
-    LEFT JOIN users u ON u.id = a.doctor_id`;
+function mapTicket(a) {
+  if (!a) return null;
+  return {
+    id: a.id, ticket_number: a.ticketNumber, patient_id: a.patientId,
+    doctor_id: a.doctorId, date: a.date, time: a.time, status: a.status,
+    room: a.room, created_by: a.createdBy, created_at: a.createdAt, updated_at: a.updatedAt,
+    patient_name: a.patient?.fullName, patient_card: a.patient?.cardNumber,
+    patient_discord_id: a.patient?.discordId,
+    doctor_name: a.doctor?.fullName, doctor_specialty: a.doctor?.specialty,
+  };
+}
+
+function mapPatient(p) {
+  if (!p) return null;
+  return {
+    id: p.id, card_number: p.cardNumber, full_name: p.fullName,
+    birth_date: p.birthDate, sex: p.sex, oms_number: p.omsNumber,
+    blood_group: p.bloodGroup, allergies: p.allergies, phone: p.phone,
+    discord_id: p.discordId, status: p.status, created_by: p.createdBy,
+    created_at: p.createdAt,
+  };
+}
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -50,156 +47,173 @@ router.get('/internal/health', (req, res) => {
   res.json({ ok: true, ts: new Date().toISOString() });
 });
 
-// ---- Привязка персонажа к Discord по коду с сайта -------------------------------
-
-router.post('/internal/link', (req, res) => {
-  const db = getDb();
+router.post('/internal/link', async (req, res) => {
   const code = String(req.body?.code || '').trim().toUpperCase();
   const discordId = String(req.body?.discordId || '').trim();
   if (!/^[A-Z0-9]{4,10}$/.test(code)) return res.status(400).json({ error: 'Неверный формат кода' });
   if (!/^\d{5,25}$/.test(discordId)) return res.status(400).json({ error: 'Неверный Discord ID' });
 
-  const row = db.prepare(`SELECT * FROM link_codes WHERE code = ?`).get(code);
-  if (!row || row.used_at) return res.status(404).json({ error: 'Код не найден или уже использован' });
-  if (row.expires_at < new Date().toISOString()) return res.status(410).json({ error: 'Код истёк, получите новый на сайте' });
+  const row = await prisma.linkCode.findUnique({ where: { code } });
+  if (!row || row.usedAt) return res.status(404).json({ error: 'Код не найден или уже использован' });
+  if (row.expiresAt < new Date().toISOString()) return res.status(410).json({ error: 'Код истёк, получите новый на сайте' });
 
-  const patient = db.prepare(`SELECT * FROM patients WHERE id = ?`).get(row.patient_id);
+  const patient = await prisma.patients.findUnique({ where: { id: row.patientId } });
   if (!patient) return res.status(404).json({ error: 'Персонаж не найден' });
 
-  db.prepare(`UPDATE link_codes SET used_at = datetime('now') WHERE code = ?`).run(code);
-  db.prepare(`UPDATE patients SET discord_id = ? WHERE id = ?`).run(discordId, patient.id);
+  await prisma.linkCode.update({ where: { code }, data: { usedAt: new Date() } });
+  await prisma.patients.update({ where: { id: patient.id }, data: { discordId } });
 
-  audit(db, {
-    action: 'bot.link',
-    entityType: 'patient',
-    entityId: patient.id,
-    details: { discordId },
-    ip: req.ip,
+  audit({
+    action: 'bot.link', entityType: 'patient', entityId: patient.id,
+    details: { discordId }, ip: req.ip,
   });
   res.json({
     ok: true,
-    patient: { id: patient.id, fullName: patient.full_name, cardNumber: patient.card_number },
+    patient: { id: patient.id, fullName: patient.fullName, cardNumber: patient.cardNumber },
   });
 });
 
-// ---- Блокировка персонажа (админ через бота) --------------------------------------
-
-router.post('/internal/patients/:id/block', (req, res) => {
-  const db = getDb();
-  const patient = db.prepare(`SELECT * FROM patients WHERE id = ?`).get(Number(req.params.id));
+router.post('/internal/patients/:id/block', async (req, res) => {
+  const patient = await prisma.patients.findUnique({ where: { id: Number(req.params.id) } });
   if (!patient) return res.status(404).json({ error: 'Персонаж не найден' });
   const blocked = !!req.body?.blocked;
-  db.prepare(`UPDATE patients SET status = ? WHERE id = ?`).run(blocked ? 'blocked' : 'active', patient.id);
-  audit(db, {
+  await prisma.patients.update({ where: { id: patient.id }, data: { status: blocked ? 'blocked' : 'active' } });
+  audit({
     action: blocked ? 'bot.patient.block' : 'bot.patient.unblock',
-    entityType: 'patient',
-    entityId: patient.id,
-    ip: req.ip,
+    entityType: 'patient', entityId: patient.id, ip: req.ip,
   });
   res.json({ ok: true, status: blocked ? 'blocked' : 'active' });
 });
 
-// ---- Статус врача (сам врач через бота) + расписание ------------------------------
-
-router.post('/internal/doctors/status', (req, res) => {
-  const db = getDb();
+router.post('/internal/doctors/status', async (req, res) => {
   const discordId = String(req.body?.discordId || '');
   const status = String(req.body?.status || '');
   if (!['free', 'in_appointment', 'offline'].includes(status)) {
     return res.status(400).json({ error: 'Статус: free | in_appointment | offline' });
   }
-  const user = db.prepare(`SELECT * FROM users WHERE discord_id = ? AND is_active = 1`).get(discordId);
+  const user = await prisma.users.findFirst({ where: { discordId, isActive: true } });
   if (!user) return res.status(403).json({ error: 'Вы не сотрудник больницы' });
-  db.prepare(`UPDATE users SET status = ? WHERE id = ?`).run(status, user.id);
+  await prisma.users.update({ where: { id: user.id }, data: { status } });
   hub.broadcast(WS_EVENTS.DOCTOR_STATUS_UPDATED, { doctorId: user.id, status });
   res.json({ ok: true, status });
 });
 
-router.get('/internal/schedule', (req, res) => {
-  const db = getDb();
+router.get('/internal/schedule', async (req, res) => {
   const date = String(req.query.date || todayIso());
   const doctorId = Number(req.query.doctorId || 0);
   if (!doctorId) return res.status(400).json({ error: 'doctorId обязателен' });
-  const rows = db
-    .prepare(`${TICKET_SELECT} WHERE a.doctor_id = ? AND a.date = ? AND a.status IN ('waiting','in_room') ORDER BY a.time`)
-    .all(doctorId, date);
-  res.json({ date, schedule: rows });
+  const rows = await prisma.appointment.findMany({
+    where: { doctorId, date, status: { in: ['waiting', 'in_room'] } },
+    include: { patient: true, doctor: true },
+    orderBy: { time: 'asc' },
+  });
+  res.json({ date, schedule: rows.map(mapTicket) });
 });
 
-router.get('/internal/doctors', (req, res) => {
-  const db = getDb();
-  const rows = db
-    .prepare(`SELECT id, discord_id, full_name, specialty, role, status FROM users WHERE is_active = 1 ORDER BY full_name`)
-    .all();
-  res.json({ doctors: rows });
+router.get('/internal/doctors', async (req, res) => {
+  const rows = await prisma.users.findMany({
+    where: { isActive: true },
+    orderBy: { fullName: 'asc' },
+    select: { id: true, discordId: true, fullName: true, specialty: true, role: true, status: true },
+  });
+  res.json({
+    doctors: rows.map(u => ({
+      id: u.id, discord_id: u.discordId, full_name: u.fullName,
+      specialty: u.specialty, role: u.role, status: u.status,
+    })),
+  });
 });
 
-router.get('/internal/staff/:discordId', (req, res) => {
-  const row = getDb()
-    .prepare(`SELECT id, discord_id, full_name, role FROM users WHERE discord_id = ? AND is_active = 1`)
-    .get(String(req.params.discordId));
-  res.json({ staff: row || null });
+router.get('/internal/staff/:discordId', async (req, res) => {
+  const row = await prisma.users.findFirst({
+    where: { discordId: String(req.params.discordId), isActive: true },
+    select: { id: true, discordId: true, fullName: true, role: true },
+  });
+  res.json({
+    staff: row ? { id: row.id, discord_id: row.discordId, full_name: row.fullName, role: row.role } : null,
+  });
 });
 
-router.get('/internal/patients', (req, res) => {
-  const db = getDb();
+router.get('/internal/patients', async (req, res) => {
   const q = String(req.query.q || '').trim().toLowerCase();
-  let rows = db
-    .prepare(`SELECT id, card_number, full_name, status FROM patients ORDER BY id DESC LIMIT 200`)
-    .all();
+  let rows = await prisma.patients.findMany({
+    orderBy: { id: 'desc' },
+    take: 200,
+    select: { id: true, cardNumber: true, fullName: true, status: true },
+  });
+  rows = rows.map(p => ({
+    id: p.id, card_number: p.cardNumber, full_name: p.fullName, status: p.status,
+  }));
   if (q) {
     rows = rows.filter((r) => r.full_name.toLowerCase().includes(q) || r.card_number.toLowerCase().includes(q));
   }
   res.json({ patients: rows });
 });
 
-router.get('/internal/citizens/:discordId', (req, res) => {
-  const rows = getDb()
-    .prepare(
-      `SELECT id, card_number, full_name, birth_date, sex, oms_number, phone, blood_group, allergies, status
-         FROM patients WHERE discord_id = ? ORDER BY id`
-    )
-    .all(String(req.params.discordId));
-  res.json({ citizens: rows });
-});
-
-router.get('/internal/patients/:id/card', (req, res) => {
-  const db = getDb();
-  const patient = db.prepare(`SELECT * FROM patients WHERE id = ?`).get(Number(req.params.id));
-  if (!patient) return res.status(404).json({ error: 'Персонаж не найден' });
-
-  const tickets = db
-    .prepare(`${TICKET_SELECT} WHERE a.patient_id = ? AND a.status IN ('waiting','in_room') ORDER BY a.date, a.time`)
-    .all(patient.id);
-  const protocols = db
-    .prepare(
-      `SELECT e.visit_date, e.record_type, e.diagnosis_code, e.diagnosis_text, e.notes,
-              u.full_name AS doctor_name
-         FROM emr_records e LEFT JOIN users u ON u.id = e.doctor_id
-        WHERE e.patient_id = ? AND e.record_type != 'lab'
-        ORDER BY e.visit_date DESC LIMIT 5`
-    )
-    .all(patient.id);
-  const prescriptions = db
-    .prepare(`SELECT medication, dosage, issued_at FROM prescriptions WHERE patient_id = ? ORDER BY issued_at DESC LIMIT 5`)
-    .all(patient.id);
-
-  res.json({
-    patient: {
-      id: patient.id, fullName: patient.full_name, cardNumber: patient.card_number,
-      birthDate: patient.birth_date, sex: patient.sex, status: patient.status,
-      omsNumber: patient.oms_number, bloodGroup: patient.blood_group, allergies: patient.allergies,
-      discordId: patient.discord_id,
+router.get('/internal/citizens/:discordId', async (req, res) => {
+  const rows = await prisma.patients.findMany({
+    where: { discordId: String(req.params.discordId) },
+    orderBy: { id: 'asc' },
+    select: {
+      id: true, cardNumber: true, fullName: true, birthDate: true,
+      sex: true, omsNumber: true, phone: true, bloodGroup: true,
+      allergies: true, status: true,
     },
-    tickets,
-    protocols,
-    prescriptions,
+  });
+  res.json({
+    citizens: rows.map(p => ({
+      id: p.id, card_number: p.cardNumber, full_name: p.fullName,
+      birth_date: p.birthDate, sex: p.sex, oms_number: p.omsNumber,
+      phone: p.phone, blood_group: p.bloodGroup, allergies: p.allergies, status: p.status,
+    })),
   });
 });
 
-router.post('/internal/patients/:id/tickets', (req, res) => {
-  const db = getDb();
-  const patient = db.prepare(`SELECT * FROM patients WHERE id = ?`).get(Number(req.params.id));
+router.get('/internal/patients/:id/card', async (req, res) => {
+  const patient = await prisma.patients.findUnique({ where: { id: Number(req.params.id) } });
+  if (!patient) return res.status(404).json({ error: 'Персонаж не найден' });
+
+  const tickets = await prisma.appointment.findMany({
+    where: { patientId: patient.id, status: { in: ['waiting', 'in_room'] } },
+    include: { patient: true, doctor: true },
+    orderBy: [{ date: 'asc' }, { time: 'asc' }],
+  });
+
+  const protocols = await prisma.record.findMany({
+    where: { patientId: patient.id, recordType: { not: 'lab' } },
+    include: { doctor: { select: { fullName: true } } },
+    orderBy: { visitDate: 'desc' },
+    take: 5,
+  });
+
+  const prescriptions = await prisma.prescription.findMany({
+    where: { patientId: patient.id },
+    select: { medication: true, dosage: true, issuedAt: true },
+    orderBy: { issuedAt: 'desc' },
+    take: 5,
+  });
+
+  res.json({
+    patient: {
+      id: patient.id, fullName: patient.fullName, cardNumber: patient.cardNumber,
+      birthDate: patient.birthDate, sex: patient.sex, status: patient.status,
+      omsNumber: patient.omsNumber, bloodGroup: patient.bloodGroup,
+      allergies: patient.allergies, discordId: patient.discordId,
+    },
+    tickets: tickets.map(mapTicket),
+    protocols: protocols.map(r => ({
+      visit_date: r.visitDate, record_type: r.recordType,
+      diagnosis_code: r.diagnosisCode, diagnosis_text: r.diagnosisText,
+      notes: r.notes, doctor_name: r.doctor?.fullName,
+    })),
+    prescriptions: prescriptions.map(p => ({
+      medication: p.medication, dosage: p.dosage, issued_at: p.issuedAt,
+    })),
+  });
+});
+
+router.post('/internal/patients/:id/tickets', async (req, res) => {
+  const patient = await prisma.patients.findUnique({ where: { id: Number(req.params.id) } });
   if (!patient) return res.status(404).json({ error: 'Персонаж не найден' });
   if (patient.status === 'blocked') return res.status(403).json({ error: 'Аккаунт заблокирован администрацией' });
 
@@ -213,81 +227,75 @@ router.post('/internal/patients/:id/tickets', (req, res) => {
   let doctor = null;
   const doctorId = Number(req.body?.doctorId || 0);
   if (doctorId) {
-    doctor = db.prepare(`SELECT * FROM users WHERE id = ? AND is_active = 1`).get(doctorId);
+    doctor = await prisma.users.findFirst({ where: { id: doctorId, isActive: true } });
     if (!doctor) return res.status(404).json({ error: 'Врач не найден' });
-    const conflictDoc = db
-      .prepare(`SELECT id FROM appointments WHERE doctor_id = ? AND date = ? AND time = ? AND status IN ('waiting','in_room')`)
-      .get(doctor.id, date, time);
+    const conflictDoc = await prisma.appointment.findFirst({
+      where: { doctorId: doctor.id, date, time, status: { in: ['waiting', 'in_room'] } },
+    });
     if (conflictDoc) return res.status(409).json({ error: `У врача занято ${time}` });
   }
 
-  const conflictSelf = db
-    .prepare(`SELECT id FROM appointments WHERE patient_id = ? AND date = ? AND time = ? AND status IN ('waiting','in_room')`)
-    .get(patient.id, date, time);
+  const conflictSelf = await prisma.appointment.findFirst({
+    where: { patientId: patient.id, date, time, status: { in: ['waiting', 'in_room'] } },
+  });
   if (conflictSelf) return res.status(409).json({ error: 'У персонажа уже есть талон на это время' });
 
-  const number = nextTicketNumber(db, date);
-  const info = db
-    .prepare(
-      `INSERT INTO appointments (ticket_number, patient_id, doctor_id, date, time, status, created_by)
-       VALUES (?, ?, ?, ?, ?, 'waiting', NULL)`
-    )
-    .run(number, patient.id, doctor ? doctor.id : null, date, time);
-  const appointment = db.prepare(`${TICKET_SELECT} WHERE a.id = ?`).get(info.lastInsertRowid);
-
-  audit(db, {
-    action: 'bot.ticket.create',
-    entityType: 'appointment',
-    entityId: appointment.id,
-    details: { ticketNumber: number, patientId: patient.id, viaDiscordId: req.body?.viaDiscordId },
-    ip: req.ip,
+  const number = await nextTicketNumber(date);
+  const appointment = await prisma.appointment.create({
+    data: {
+      ticketNumber: number, patientId: patient.id,
+      doctorId: doctor ? doctor.id : null, date, time, status: 'waiting',
+    },
+    include: { patient: true, doctor: true },
   });
-  hub.broadcast(WS_EVENTS.APPOINTMENT_CREATED, { appointment });
-  hub.broadcast(WS_EVENTS.QUEUE_UPDATED, { date });
 
-  res.status(201).json({ ok: true, appointment });
+  audit({
+    action: 'bot.ticket.create', entityType: 'appointment', entityId: appointment.id,
+    details: { ticketNumber: number, patientId: patient.id, viaDiscordId: req.body?.viaDiscordId }, ip: req.ip,
+  });
+  hub.broadcast(WS_EVENTS.APPOINTMENT_CREATED, { appointment: mapTicket(appointment) });
+  hub.broadcast(WS_EVENTS.QUEUE_UPDATED, { date });
+  res.status(201).json({ ok: true, appointment: mapTicket(appointment) });
 });
 
-router.post('/internal/tickets/:id/cancel', (req, res) => {
-  const db = getDb();
-  const ticket = db.prepare(`${TICKET_SELECT} WHERE a.id = ?`).get(Number(req.params.id));
+router.post('/internal/tickets/:id/cancel', async (req, res) => {
+  const ticket = await prisma.appointment.findUnique({
+    where: { id: Number(req.params.id) },
+    include: { patient: true, doctor: true },
+  });
   if (!ticket) return res.status(404).json({ error: 'Талон не найден' });
 
-  // Владелец: персонаж Discord-аккаунта ИЛИ любой сотрудник по Discord ID.
   let allowed = false;
   const viaDiscordId = String(req.body?.viaDiscordId || '');
-  if (viaDiscordId && ticket.patient_discord_id === viaDiscordId) allowed = true;
+  if (viaDiscordId && ticket.patient?.discordId === viaDiscordId) allowed = true;
   if (viaDiscordId) {
-    const staff = db.prepare(`SELECT role FROM users WHERE discord_id = ? AND is_active = 1`).get(viaDiscordId);
+    const staff = await prisma.users.findFirst({ where: { discordId: viaDiscordId, isActive: true } });
     if (staff) allowed = true;
   }
   if (!allowed) return res.status(403).json({ error: 'Нет прав на этот талон' });
   if (ticket.status !== 'waiting') return res.status(409).json({ error: 'Отменить можно только «Ожидание»' });
 
-  db.prepare(`UPDATE appointments SET status = 'cancelled', updated_at = datetime('now') WHERE id = ?`).run(ticket.id);
-  audit(getDb(), {
-    action: 'bot.ticket.cancel',
-    entityType: 'appointment',
-    entityId: ticket.id,
-    details: { viaDiscordId },
-    ip: req.ip,
+  await prisma.appointment.update({ where: { id: ticket.id }, data: { status: 'cancelled' } });
+  audit({
+    action: 'bot.ticket.cancel', entityType: 'appointment', entityId: ticket.id,
+    details: { viaDiscordId }, ip: req.ip,
   });
   hub.broadcast(WS_EVENTS.APPOINTMENT_STATUS_UPDATED, { appointmentId: ticket.id, status: 'cancelled' });
   hub.broadcast(WS_EVENTS.QUEUE_UPDATED, { date: ticket.date });
   res.json({ ok: true });
 });
 
-router.get('/internal/queue', (req, res) => {
-  const db = getDb();
+router.get('/internal/queue', async (req, res) => {
   const date = String(req.query.date || todayIso());
-  const rows = db
-    .prepare(`${TICKET_SELECT} WHERE a.date = ? AND a.status != 'cancelled' ORDER BY a.time`)
-    .all(date);
-  res.json({ date, queue: rows });
+  const rows = await prisma.appointment.findMany({
+    where: { date, status: { not: 'cancelled' } },
+    include: { patient: true, doctor: true },
+    orderBy: { time: 'asc' },
+  });
+  res.json({ date, queue: rows.map(mapTicket) });
 });
 
-router.get('/internal/reminders', (req, res) => {
-  const db = getDb();
+router.get('/internal/reminders', async (req, res) => {
   const minutes = Math.min(Math.max(Number(req.query.minutes || 60), 1), 1500);
   const now = new Date();
   const limit = new Date(now.getTime() + minutes * 60000);
@@ -295,74 +303,82 @@ router.get('/internal/reminders', (req, res) => {
   const nowT = `${fmt(now.getHours())}:${fmt(now.getMinutes())}`;
   const limT = `${fmt(limit.getHours())}:${fmt(limit.getMinutes())}`;
 
-  const rows = db
-    .prepare(
-      `SELECT a.id, a.date, a.time, a.room, a.ticket_number,
-              p.full_name AS patient_name, p.discord_id,
-              u.full_name AS doctor_name
-         FROM appointments a
-         JOIN patients p ON p.id = a.patient_id
-         LEFT JOIN users u ON u.id = a.doctor_id
-        WHERE a.date = ? AND a.status = 'waiting'
-          AND a.time >= ? AND a.time <= ?
-          AND p.discord_id IS NOT NULL AND p.discord_id != ''
-        ORDER BY a.time`
-    )
-    .all(todayIso(), nowT, limT);
-  res.json({ reminders: rows });
+  const rows = await prisma.appointment.findMany({
+    where: {
+      date: todayIso(), status: 'waiting',
+      time: { gte: nowT, lte: limT },
+      patient: { discordId: { notIn: [null, ''] } },
+    },
+    include: { patient: true, doctor: true },
+    orderBy: { time: 'asc' },
+  });
+  res.json({
+    reminders: rows.map(r => ({
+      id: r.id, date: r.date, time: r.time, room: r.room,
+      ticket_number: r.ticketNumber,
+      patient_name: r.patient?.fullName, discord_id: r.patient?.discordId,
+      doctor_name: r.doctor?.fullName,
+    })),
+  });
 });
 
-// ---- Импорт медкарты (из Discord-форума через бота) -------------------------
-router.post('/internal/patients', (req, res) => {
-  const db = getDb();
+router.post('/internal/patients', async (req, res) => {
   const { fullName, cardNumber, birthDate, sex, omsNumber, bloodGroup, allergies, phone } = req.body;
 
   if (!fullName || !String(fullName).trim()) {
     return res.status(400).json({ error: 'fullName обязателен' });
   }
 
-  // Дедупликация: по cardNumber (если указан) или OMS
   if (cardNumber) {
-    const existing = db.prepare(`SELECT id, card_number, full_name FROM patients WHERE card_number = ?`).get(String(cardNumber).trim());
+    const existing = await prisma.patients.findFirst({
+      where: { cardNumber: String(cardNumber).trim() },
+      select: { id: true, cardNumber: true, fullName: true },
+    });
     if (existing) {
-      return res.status(409).json({ error: 'Карта уже существует', existing });
+      return res.status(409).json({
+        error: 'Карта уже существует',
+        existing: { id: existing.id, card_number: existing.cardNumber, full_name: existing.fullName },
+      });
     }
   }
   if (omsNumber) {
-    const existing = db.prepare(`SELECT id, card_number, full_name FROM patients WHERE oms_number = ?`).get(String(omsNumber).trim());
+    const existing = await prisma.patients.findFirst({
+      where: { omsNumber: String(omsNumber).trim() },
+      select: { id: true, cardNumber: true, fullName: true },
+    });
     if (existing) {
-      return res.status(409).json({ error: 'Пациент с таким ОМС уже существует', existing });
+      return res.status(409).json({
+        error: 'Пациент с таким ОМС уже существует',
+        existing: { id: existing.id, card_number: existing.cardNumber, full_name: existing.fullName },
+      });
     }
   }
 
-  const { nextCardNumber: genCard } = require('../services/documents');
-  const finalCard = (cardNumber && String(cardNumber).trim()) || genCard(db);
+  const finalCard = (cardNumber && String(cardNumber).trim()) || await nextCardNumber();
 
-  const info = db.prepare(
-    `INSERT INTO patients (card_number, full_name, birth_date, sex, oms_number, blood_group, allergies, phone)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-  ).run(
-    finalCard,
-    String(fullName).trim(),
-    birthDate || null,
-    sex || null,
-    omsNumber ? String(omsNumber).trim() : null,
-    bloodGroup || null,
-    allergies || null,
-    phone ? String(phone).trim() : null,
-  );
+  const patient = await prisma.patients.create({
+    data: {
+      cardNumber: finalCard,
+      fullName: String(fullName).trim(),
+      birthDate: birthDate || null,
+      sex: sex || null,
+      omsNumber: omsNumber ? String(omsNumber).trim() : null,
+      bloodGroup: bloodGroup || null,
+      allergies: allergies || null,
+      phone: phone ? String(phone).trim() : null,
+    },
+  });
 
-  const patient = db.prepare(`SELECT * FROM patients WHERE id = ?`).get(info.lastInsertRowid);
-  audit(db, {
+  audit({
     actorId: null, action: 'bot.patient.import', entityType: 'patient',
     entityId: patient.id, details: { cardNumber: finalCard, source: 'discord-forum' }, ip: null,
   });
-  hub.broadcast(WS_EVENTS.PATIENT_CREATED, { patientId: patient.id, cardNumber: finalCard, fullName: patient.full_name, patient });
-
+  hub.broadcast(WS_EVENTS.PATIENT_CREATED, {
+    patientId: patient.id, cardNumber: finalCard, fullName: patient.fullName, patient,
+  });
   res.status(201).json({ ok: true, patient });
 });
 
-// ---- Настройки бота (GET/PUT) ------------------------------------------------
 router.get('/internal/settings', (req, res) => {
   res.json({ settings: settingsStore.getAll() });
 });

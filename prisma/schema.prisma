@@ -1,0 +1,221 @@
+// Prisma Schema для ЕМИАС — PostgreSQL, мультисхемность (@@schema("emias"))
+// Без @@map() — имена таблиц = имена моделей в схеме "emias"
+
+generator client {
+  provider      = "prisma-client-js"
+  previewFeatures = ["multiSchema"]
+}
+
+datasource db {
+  provider  = "postgresql"
+  url       = env("DATABASE_URL")
+  directUrl = env("DATABASE_URL_UNPOOLED")
+  schemas   = ["emias"]
+}
+
+model Users {
+  id              Int             @id @default(autoincrement())
+  discordId       String          @map("discord_id")
+  discordUsername String?         @map("discord_username")
+  discordAvatar   String?         @map("discord_avatar")
+  fullName        String          @map("full_name")
+  specialty       String?         @map("specialty")
+  role            String          @default("Врач") @map("role")
+  status          String          @default("offline") @map("status")
+  isActive        Int             @default(1) @map("is_active")
+  createdAt       DateTime        @default(now()) @map("created_at")
+  guildId         String          @default("") @map("guild_id")
+
+  appointments    Appointment[]   @relation("DoctorAppointments")
+  emrRecords      Record[]        @relation("DoctorRecords")
+  prescriptions   Prescription[]  @relation("DoctorPrescriptions")
+  auditLogs       AuditLog[]      @relation("AuditActor")
+
+  @@unique([guildId, discordId])
+  @@index([guildId])
+  @@index([discordId])
+  @@schema("emias")
+}
+
+model Patients {
+  id            Int             @id @default(autoincrement())
+  cardNumber    String          @unique @map("card_number")
+  fullName      String          @map("full_name")
+  birthDate     String?         @map("birth_date")
+  sex           String?         @map("sex")
+  omsNumber     String?         @unique @map("oms_number")
+  bloodGroup    String?         @map("blood_group")
+  allergies     String?         @map("allergies")
+  phone         String?         @map("phone")
+  discordId     String?         @map("discord_id")
+  status        String          @default("active") @map("status")
+  createdBy     Int?            @map("created_by")
+  createdAt     DateTime        @default(now()) @map("created_at")
+  guildId       String          @default("") @map("guild_id")
+
+  appointments  Appointment[]   @relation("PatientAppointments")
+  records       Record[]        @relation("PatientRecords")
+  prescriptions Prescription[]  @relation("PatientPrescriptions")
+  linkCodes     LinkCode[]      @relation("PatientLinkCodes")
+  sessions      CitizenSession[]
+
+  @@index([discordId])
+  @@index([guildId])
+  @@index([cardNumber])
+  @@schema("emias")
+}
+
+model Appointment {
+  id             Int        @id @default(autoincrement())
+  ticketNumber   String     @unique @map("ticket_number")
+  patientId      Int        @map("patient_id")
+  doctorId       Int?       @map("doctor_id")
+  date           String
+  time           String
+  status         String     @default("waiting") @map("status")
+  room           String?    @map("room")
+  createdBy      Int?       @map("created_by")
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
+  guildId        String     @default("") @map("guild_id")
+
+  patient        Patients   @relation("PatientAppointments", fields: [patientId], references: [id], onDelete: Cascade)
+  doctor         Users?     @relation("DoctorAppointments", fields: [doctorId], references: [id], onDelete: SetNull)
+
+  @@index([patientId])
+  @@index([doctorId])
+  @@index([date])
+  @@index([status])
+  @@index([guildId])
+  @@schema("emias")
+}
+
+model Record {
+  id             Int        @id @default(autoincrement())
+  patientId      Int        @map("patient_id")
+  doctorId       Int?       @map("doctor_id")
+  visitDate      DateTime   @default(now()) @map("visit_date")
+  recordType     String     @default("visit") @map("record_type")
+  complaints     String?
+  diagnosisCode  String?    @map("diagnosis_code")
+  diagnosisText  String?    @map("diagnosis_text")
+  notes          String?
+  sickLeaveDays  Int?       @map("sick_leave_days")
+  createdAt      DateTime   @default(now()) @map("created_at")
+  guildId        String     @default("") @map("guild_id")
+
+  patient        Patients   @relation("PatientRecords", fields: [patientId], references: [id], onDelete: Cascade)
+  doctor         Users?     @relation("DoctorRecords", fields: [doctorId], references: [id], onDelete: SetNull)
+
+  @@index([patientId])
+  @@index([doctorId])
+  @@index([guildId])
+  @@schema("emias")
+}
+
+model Prescription {
+  id                 Int        @id @default(autoincrement())
+  prescriptionNumber String     @unique @map("prescription_number")
+  patientId          Int        @map("patient_id")
+  doctorId           Int?       @map("doctor_id")
+  medication         String
+  dosage             String
+  durationDays       Int?       @map("duration_days")
+  issuedAt           DateTime   @default(now()) @map("issued_at")
+  guildId            String     @default("") @map("guild_id")
+
+  patient            Patients   @relation("PatientPrescriptions", fields: [patientId], references: [id], onDelete: Cascade)
+  doctor             Users?     @relation("DoctorPrescriptions", fields: [doctorId], references: [id], onDelete: SetNull)
+
+  @@index([patientId])
+  @@index([doctorId])
+  @@index([guildId])
+  @@schema("emias")
+}
+
+model AuditLog {
+  id          Int        @id @default(autoincrement())
+  actorId     Int?       @map("actor_id")
+  action      String
+  entityType  String?    @map("entity_type")
+  entityId    String?    @map("entity_id")
+  details     String?
+  ip          String?
+  createdAt   DateTime   @default(now()) @map("created_at")
+  guildId     String     @default("") @map("guild_id")
+
+  actor       Users?     @relation("AuditActor", fields: [actorId], references: [id], onDelete: SetNull)
+
+  @@index([actorId])
+  @@index([createdAt])
+  @@index([guildId])
+  @@schema("emias")
+}
+
+model LinkCode {
+  code        String    @id
+  patientId   Int       @map("patient_id")
+  expiresAt   DateTime  @map("expires_at")
+  usedAt      DateTime? @map("used_at")
+  guildId     String    @default("") @map("guild_id")
+
+  patient     Patients  @relation("PatientLinkCodes", fields: [patientId], references: [id], onDelete: Cascade)
+
+  @@index([patientId])
+  @@schema("emias")
+}
+
+model SiteAuthCode {
+  code            String    @id
+  discordId       String    @map("discord_id")
+  discordUsername String?   @map("discord_username")
+  expiresAt       DateTime  @map("expires_at")
+  usedAt          DateTime? @map("used_at")
+  guildId         String    @default("") @map("guild_id")
+
+  @@index([discordId])
+  @@schema("emias")
+}
+
+model CitizenAccount {
+  id              Int       @id @default(autoincrement())
+  discordId       String    @unique @map("discord_id")
+  discordUsername String?   @map("discord_username")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  lastLoginAt     DateTime? @map("last_login_at")
+  guildId         String    @default("") @map("guild_id")
+
+  sessions        CitizenSession[]
+
+  @@index([discordId])
+  @@schema("emias")
+}
+
+model CitizenSession {
+  id         Int       @id @default(autoincrement())
+  token      String    @unique @map("token")
+  accountId  Int       @map("account_id")
+  patientId  Int?      @map("patient_id")
+  expiresAt  DateTime  @map("expires_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+  guildId    String    @default("") @map("guild_id")
+
+  account    CitizenAccount @relation(fields: [accountId], references: [id], onDelete: Cascade)
+  patient    Patients?      @relation(fields: [patientId], references: [id], onDelete: SetNull)
+
+  @@index([accountId])
+  @@index([token])
+  @@schema("emias")
+}
+
+model Settings {
+  key       String    @map("key")
+  value     String?
+  label     String?
+  updatedAt DateTime  @default(now()) @map("updated_at")
+  guildId   String    @default("") @map("guild_id")
+
+  @@id([guildId, key])
+  @@index([guildId])
+  @@schema("emias")
+}

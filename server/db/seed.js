@@ -1,102 +1,90 @@
-'use strict';
-
 /**
  * Демонстрационные данные для локальной разработки и РП-сценариев.
- * Запуск: npm run db:seed (перед этим npm run db:migrate).
+ * Запуск: node server/db/seed.js
  *
- * ВНИМАНИЕ: все пациенты, врачи и диагнозы — вымышлены (требование
- * юридического стандарта проекта). Discord ID — тестовые.
+ * ВНИМАНИЕ: все пациенты, врачи и диагнозы — вымышлены.
  */
 
-const { getDb } = require('./connection');
-const { runMigrations } = require('./migrate');
-const { nextCardNumber, nextTicketNumber, nextPrescriptionNumber } = require('../services/documents');
+const { prisma } = require('./connection');
 const { ROLES, TICKET_STATUS } = require('../../shared/constants');
 
-function seed() {
-  const db = getDb();
-  runMigrations(db);
+function pad(n, w) { return String(n).padStart(w, '0'); }
 
-  const existing = db.prepare(`SELECT COUNT(*) AS n FROM users`).get().n;
+async function nextCardNumber() {
+  const year = new Date().getFullYear();
+  const prefix = `ЕМК-${year}-`;
+  const row = await prisma.patients.findFirst({ where: { cardNumber: { startsWith: prefix } }, orderBy: { id: 'desc' }, select: { cardNumber: true } });
+  return `${prefix}${pad((row ? Number(row.cardNumber.slice(prefix.length)) : 0) + 1, 6)}`;
+}
+
+async function nextTicketNumber(dateISO) {
+  const prefix = `Т-${dateISO.replaceAll('-', '')}-`;
+  const row = await prisma.appointment.findFirst({ where: { ticketNumber: { startsWith: prefix } }, orderBy: { id: 'desc' }, select: { ticketNumber: true } });
+  return `${prefix}${pad((row ? Number(row.ticketNumber.slice(prefix.length)) : 0) + 1, 3)}`;
+}
+
+async function nextPrescriptionNumber() {
+  const year = new Date().getFullYear();
+  const prefix = `Р-${year}-`;
+  const row = await prisma.prescription.findFirst({ where: { prescriptionNumber: { startsWith: prefix } }, orderBy: { id: 'desc' }, select: { prescriptionNumber: true } });
+  return `${prefix}${pad((row ? Number(row.prescriptionNumber.slice(prefix.length)) : 0) + 1, 6)}`;
+}
+
+async function seed() {
+  const existing = await prisma.users.count();
   if (existing > 0) {
-    console.log('[seed] данные уже есть — пропуск (удалите data/emias.db для пересоздания)');
+    console.log('[seed] данные уже есть — пропуск');
     return;
   }
 
-  const insertUser = db.prepare(
-    `INSERT INTO users (discord_id, discord_username, full_name, specialty, role, status)
-     VALUES (?, ?, ?, ?, ?, ?)`
-  );
-  const insertPatient = db.prepare(
-    `INSERT INTO patients (card_number, full_name, birth_date, sex, oms_number, blood_group, allergies, phone)
-     VALUES (@card_number, @full_name, @birth_date, @sex, @oms_number, @blood_group, @allergies, @phone)`
-  );
-  const insertAppointment = db.prepare(
-    `INSERT INTO appointments (ticket_number, patient_id, doctor_id, date, time, status, room)
-     VALUES (?, ?, ?, ?, ?, ?, ?)`
-  );
-  const insertRecord = db.prepare(
-    `INSERT INTO emr_records (patient_id, doctor_id, visit_date, record_type, complaints, diagnosis_code, diagnosis_text, notes, sick_leave_days)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-  );
-  const insertPrescription = db.prepare(
-    `INSERT INTO prescriptions (prescription_number, patient_id, doctor_id, medication, dosage, duration_days)
-     VALUES (?, ?, ?, ?, ?, ?)`
-  );
+  const h = await prisma.users.create({ data: { discordId: '100000000000000001', discordUsername: 'head_physician_rp', fullName: 'Громова Елена Викторовна', specialty: 'kardiolog', role: ROLES.HEAD_PHYSICIAN, status: 'offline' } });
+  const t1 = await prisma.users.create({ data: { discordId: '100000000000000002', discordUsername: 'sokolova_ai', fullName: 'Соколова Анна Игоревна', specialty: 'terapevt', role: ROLES.PHYSICIAN, status: 'free' } });
+  const t2 = await prisma.users.create({ data: { discordId: '100000000000000003', discordUsername: 'morozov_dp', fullName: 'Морозов Дмитрий Павлович', specialty: 'terapevt', role: ROLES.PHYSICIAN, status: 'in_appointment' } });
+  const ped = await prisma.users.create({ data: { discordId: '100000000000000004', discordUsername: 'kuznetsova_ml', fullName: 'Кузнецова Мария Львовна', specialty: 'pediatr', role: ROLES.PHYSICIAN, status: 'free' } });
+  const sur = await prisma.users.create({ data: { discordId: '100000000000000005', discordUsername: 'gromov_sn', fullName: 'Громов Сергей Николаевич', specialty: 'hirurg', role: ROLES.PHYSICIAN, status: 'offline' } });
+  const reg = await prisma.users.create({ data: { discordId: '100000000000000006', discordUsername: 'registrar_rp', fullName: 'Титова Ольга Павловна', role: ROLES.REGISTRAR, status: 'free' } });
 
-  // ---- Персонал (вымышленный) -------------------------------------------
-  const headPhysicianId = insertUser.run('100000000000000001', 'head_physician_rp', 'Громова Елена Викторовна', 'kardiolog', ROLES.HEAD_PHYSICIAN, 'offline').lastInsertRowid;
-  const therapist1 = insertUser.run('100000000000000002', 'sokolova_ai', 'Соколова Анна Игоревна', 'terapevt', ROLES.PHYSICIAN, 'free').lastInsertRowid;
-  const therapist2 = insertUser.run('100000000000000003', 'morozov_dp', 'Морозов Дмитрий Павлович', 'terapevt', ROLES.PHYSICIAN, 'in_appointment').lastInsertRowid;
-  const pediatrician = insertUser.run('100000000000000004', 'kuznetsova_ml', 'Кузнецова Мария Львовна', 'pediatr', ROLES.PHYSICIAN, 'free').lastInsertRowid;
-  const surgeon = insertUser.run('100000000000000005', 'gromov_sn', 'Громов Сергей Николаевич', 'hirurg', ROLES.PHYSICIAN, 'offline').lastInsertRowid;
-  const registrarId = insertUser.run('100000000000000006', 'registrar_rp', 'Титова Ольга Павловна', null, ROLES.REGISTRAR, 'free').lastInsertRowid;
-
-  // ---- Пациенты (вымышленные) --------------------------------------------
-  const patientsData = [
-    { full_name: 'Петров Иван Алексеевич', birth_date: '1989-03-14', sex: 'М', oms_number: '7712345678901234', blood_group: 'I (O) Rh+', allergies: 'Нет', phone: '+7 (916) 123-45-67' },
-    { full_name: 'Петрова Алиса Игоревна', birth_date: '2019-06-02', sex: 'Ж', oms_number: '7712987654321098', blood_group: 'II (A) Rh+', allergies: 'Пенициллин', phone: '+7 (916) 123-45-67' },
-    { full_name: 'Смирнова Наталья Сергеевна', birth_date: '1975-11-23', sex: 'Ж', oms_number: '7700112233445566', blood_group: 'III (B) Rh−', allergies: 'Нет', phone: '+7 (903) 555-10-20' },
-    { full_name: 'Волков Артём Дмитриевич', birth_date: '1996-07-30', sex: 'М', oms_number: '7766554433221100', blood_group: 'II (A) Rh−', allergies: 'Полынь', phone: '+7 (925) 777-88-99' },
-    { full_name: 'Фёдорова Марина Олеговна', birth_date: '2001-01-09', sex: 'Ж', oms_number: '7755667788990011', blood_group: 'IV (AB) Rh+', allergies: 'Нет', phone: '+7 (999) 010-20-30' },
+  const pData = [
+    { fullName: 'Петров Иван Алексеевич', birthDate: '1989-03-14', sex: 'М', omsNumber: '7712345678901234', bloodGroup: 'I (O) Rh+', allergies: 'Нет', phone: '+7 (916) 123-45-67' },
+    { fullName: 'Петрова Алиса Игоревна', birthDate: '2019-06-02', sex: 'Ж', omsNumber: '7712987654321098', bloodGroup: 'II (A) Rh+', allergies: 'Пенициллин', phone: '+7 (916) 123-45-67' },
+    { fullName: 'Смирнова Наталья Сергеевна', birthDate: '1975-11-23', sex: 'Ж', omsNumber: '7700112233445566', bloodGroup: 'III (B) Rh−', allergies: 'Нет', phone: '+7 (903) 555-10-20' },
+    { fullName: 'Волков Артём Дмитриевич', birthDate: '1996-07-30', sex: 'М', omsNumber: '7766554433221100', bloodGroup: 'II (A) Rh−', allergies: 'Полынь', phone: '+7 (925) 777-88-99' },
+    { fullName: 'Фёдорова Марина Олеговна', birthDate: '2001-01-09', sex: 'Ж', omsNumber: '7755667788990011', bloodGroup: 'IV (AB) Rh+', allergies: 'Нет', phone: '+7 (999) 010-20-30' },
   ];
-  const patientIds = patientsData.map((p) => {
-    const card = nextCardNumber(db);
-    return insertPatient.run({ card_number: card, ...p }).lastInsertRowid;
-  });
-
-  // ---- Талоны на сегодня/завтра ------------------------------------------
-  const today = new Date();
-  const fmt = (d) => d.toISOString().slice(0, 10);
-  const tomorrow = new Date(today); tomorrow.setDate(today.getDate() + 1);
-  const tickets = [
-    [patientIds[0], therapist1, fmt(today), '09:00', TICKET_STATUS.DONE, '204'],
-    [patientIds[2], therapist1, fmt(today), '09:30', TICKET_STATUS.DONE, '204'],
-    [patientIds[3], therapist2, fmt(today), '10:00', TICKET_STATUS.IN_ROOM, '205'],
-    [patientIds[4], therapist2, fmt(today), '10:30', TICKET_STATUS.WAITING, '205'],
-    [patientIds[1], pediatrician, fmt(today), '11:00', TICKET_STATUS.WAITING, '112'],
-    [patientIds[2], surgeon, fmt(tomorrow), '09:15', TICKET_STATUS.WAITING, '301'],
-    [patientIds[0], therapist1, fmt(tomorrow), '12:00', TICKET_STATUS.WAITING, '204'],
-  ];
-  for (const [pid, did, date, time, status, room] of tickets) {
-    insertAppointment.run(nextTicketNumber(db, date), pid, did, date, time, status, room);
+  const pIds = [];
+  for (const p of pData) {
+    const card = await nextCardNumber();
+    const created = await prisma.patients.create({ data: { cardNumber: card, ...p } });
+    pIds.push(created.id);
   }
 
-  // ---- История ЭМК ---------------------------------------------------------
-  insertRecord.run(patientIds[0], therapist1, `${fmt(today)} 09:20`, 'visit',
-    'Головная боль 3 дня, слабость.', 'J44.8', 'ХОБЛ, обострение', 'Рекомендован постельный режим, контроль АД.', 5);
-  insertRecord.run(patientIds[2], therapist1, `${fmt(today)} 09:40`, 'lab',
-    'Профилактический осмотр.', 'E66.9', 'Избыточная масса тела', 'Направлена на биохимический анализ крови.', null);
-  insertRecord.run(patientIds[1], pediatrician, `${fmt(today)} 11:20`, 'visit',
-    'Кашель, температура 37.4.', 'J00', 'Острый назофарингит (насморк)', 'Обильное питьё, симптоматическая терапия.', null);
+  const today = new Date().toISOString().slice(0, 10);
+  const tmr = new Date(Date.now() + 86400000).toISOString().slice(0, 10);
+  const tickets = [
+    [pIds[0], t1.id, today, '09:00', 'done', '204'],
+    [pIds[2], t1.id, today, '09:30', 'done', '204'],
+    [pIds[3], t2.id, today, '10:00', 'in_room', '205'],
+    [pIds[4], t2.id, today, '10:30', 'waiting', '205'],
+    [pIds[1], ped.id, today, '11:00', 'waiting', '112'],
+    [pIds[2], sur.id, tmr, '09:15', 'waiting', '301'],
+    [pIds[0], t1.id, tmr, '12:00', 'waiting', '204'],
+  ];
+  for (const [pid, did, date, time, status, room] of tickets) {
+    const num = await nextTicketNumber(date);
+    await prisma.appointment.create({ data: { ticketNumber: num, patientId: pid, doctorId: did, date, time, status, room } });
+  }
 
-  insertPrescription.run(nextPrescriptionNumber(db), patientIds[0], therapist1, 'Индапамид', '2.5 мг, 1 раз в сутки утром', 14);
-  insertPrescription.run(nextPrescriptionNumber(db), patientIds[1], pediatrician, 'Парацетамол (детский)', '250 мг, при температуре выше 38.0', 3);
+  await prisma.record.create({ data: { patientId: pIds[0], doctorId: t1.id, visitDate: new Date(`${today}T09:20:00`), recordType: 'visit', complaints: 'Головная боль 3 дня, слабость.', diagnosisCode: 'J44.8', diagnosisText: 'ХОБЛ, обострение', notes: 'Рекомендован постельный режим, контроль АД.', sickLeaveDays: 5 } });
+  await prisma.record.create({ data: { patientId: pIds[2], doctorId: t1.id, visitDate: new Date(`${today}T09:40:00`), recordType: 'lab', complaints: 'Профилактический осмотр.', diagnosisCode: 'E66.9', diagnosisText: 'Избыточная масса тела', notes: 'Направлена на биохимический анализ крови.' } });
+  await prisma.record.create({ data: { patientId: pIds[1], doctorId: ped.id, visitDate: new Date(`${today}T11:20:00`), recordType: 'visit', complaints: 'Кашель, температура 37.4.', diagnosisCode: 'J00', diagnosisText: 'Острый назофарингит (насморк)', notes: 'Обильное питьё, симптоматическая терапия.' } });
 
-  console.log('[seed] демо-данные созданы:');
-  console.log(`       персонал: ${db.prepare('SELECT COUNT(*) n FROM users').get().n}`);
-  console.log(`       пациентов: ${db.prepare('SELECT COUNT(*) n FROM patients').get().n}`);
-  console.log(`       талонов: ${db.prepare('SELECT COUNT(*) n FROM appointments').get().n}`);
+  await prisma.prescription.create({ data: { prescriptionNumber: await nextPrescriptionNumber(), patientId: pIds[0], doctorId: t1.id, medication: 'Индапамид', dosage: '2.5 мг, 1 раз в сутки утром', durationDays: 14 } });
+  await prisma.prescription.create({ data: { prescriptionNumber: await nextPrescriptionNumber(), patientId: pIds[1], doctorId: ped.id, medication: 'Парацетамол (детский)', dosage: '250 мг, при температуре выше 38.0', durationDays: 3 } });
+
+  console.log('[seed] демо-данные созданы');
+  console.log(`  персонал: ${await prisma.users.count()}`);
+  console.log(`  пациентов: ${await prisma.patients.count()}`);
+  console.log(`  талонов: ${await prisma.appointment.count()}`);
 }
 
-seed();
+seed().catch(e => { console.error('[seed] ошибка:', e.message); process.exit(1); });

@@ -1,51 +1,43 @@
-'use strict';
-
+const { prisma } = require('../db/connection');
 const { DOC_FORMAT } = require('../../shared/constants');
-
-/**
- * Генерация номеров документов в форматах:
- *   карта пациента  ЕМК-YYYY-XXXXXX
- *   талон           Т-YYYYMMDD-NNN
- *   рецепт          Р-YYYY-NNNNNN
- * Номер строится по максимальной существующей серии — безопасно
- * при конкурентных вставках в рамках одного процесса SQLite.
- */
 
 function pad(n, width) {
   return String(n).padStart(width, '0');
 }
 
-function nextCardNumber(db) {
+async function nextCardNumber() {
   const year = new Date().getFullYear();
   const prefix = `${DOC_FORMAT.CARD_PREFIX}-${year}-`;
-  const row = db
-    .prepare(`SELECT card_number FROM patients WHERE card_number LIKE ? ORDER BY id DESC LIMIT 1`)
-    .get(`${prefix}%`);
-  const lastSeq = row ? Number(row.card_number.slice(prefix.length)) : 0;
+  const row = await prisma.patients.findFirst({
+    where: { cardNumber: { startsWith: prefix } },
+    orderBy: { id: 'desc' },
+    select: { cardNumber: true },
+  });
+  const lastSeq = row ? Number(row.cardNumber.slice(prefix.length)) : 0;
   return `${prefix}${pad(lastSeq + 1, 6)}`;
 }
 
-function nextTicketNumber(db, dateISO) {
-  const compact = dateISO.replaceAll('-', ''); // YYYYMMDD
+async function nextTicketNumber(dateISO) {
+  const compact = dateISO.replaceAll('-', '');
   const prefix = `${DOC_FORMAT.TICKET_PREFIX}-${compact}-`;
-  const row = db
-    .prepare(
-      `SELECT ticket_number FROM appointments WHERE ticket_number LIKE ? ORDER BY id DESC LIMIT 1`
-    )
-    .get(`${prefix}%`);
-  const lastSeq = row ? Number(row.ticket_number.slice(prefix.length)) : 0;
+  const row = await prisma.appointment.findFirst({
+    where: { ticketNumber: { startsWith: prefix } },
+    orderBy: { id: 'desc' },
+    select: { ticketNumber: true },
+  });
+  const lastSeq = row ? Number(row.ticketNumber.slice(prefix.length)) : 0;
   return `${prefix}${pad(lastSeq + 1, 3)}`;
 }
 
-function nextPrescriptionNumber(db) {
+async function nextPrescriptionNumber() {
   const year = new Date().getFullYear();
   const prefix = `${DOC_FORMAT.PRESCRIPTION_PREFIX}-${year}-`;
-  const row = db
-    .prepare(
-      `SELECT prescription_number FROM prescriptions WHERE prescription_number LIKE ? ORDER BY id DESC LIMIT 1`
-    )
-    .get(`${prefix}%`);
-  const lastSeq = row ? Number(row.prescription_number.slice(prefix.length)) : 0;
+  const row = await prisma.prescription.findFirst({
+    where: { prescriptionNumber: { startsWith: prefix } },
+    orderBy: { id: 'desc' },
+    select: { prescriptionNumber: true },
+  });
+  const lastSeq = row ? Number(row.prescriptionNumber.slice(prefix.length)) : 0;
   return `${prefix}${pad(lastSeq + 1, 6)}`;
 }
 

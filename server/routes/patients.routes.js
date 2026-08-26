@@ -1,15 +1,5 @@
-﻿'use strict';
-
-/**
- * Пациенты и ЭМК. Роутер монтируется с префиксом /api (см. server/index.js).
- * RBAC:
- *   - список/поиск — весь аутентифицированный персонал (нужно регистратуре);
- *   - медицинские данные (ЭМК, рецепты) — только лечащий врач
- *     (есть его приём/запись у пациента) или «Главный врач».
- */
-
-const express = require('express');
-const { getDb } = require('../db/connection');
+﻿const express = require('express');
+const { prisma } = require('../db/connection');
 const { requireAuth, isAdmin } = require('../middleware/rbac');
 const { audit } = require('../services/audit');
 const { nextCardNumber, nextPrescriptionNumber } = require('../services/documents');
@@ -23,54 +13,78 @@ function canSeeMedicalData(user) {
   return isAdmin(user) || user.role === 'Врач';
 }
 
-/** Является ли user лечащим врачом пациента. */
-function isTreatingDoctor(db, userId, patientId) {
-  const row = db
-    .prepare(
-      `SELECT 1 AS x
-         FROM (
-           SELECT doctor_id FROM appointments WHERE patient_id = ?
-           UNION
-           SELECT doctor_id FROM emr_records WHERE patient_id = ?
-         )
-        WHERE doctor_id = ?`
-    )
-    .get(patientId, patientId, userId);
-  return Boolean(row);
+async function isTreatingDoctor(userId, patientId) {
+  const appointment = await prisma.appointment.findFirst({
+    where: { patientId, doctorId: userId },
+    select: { id: true },
+  });
+  if (appointment) return true;
+  const record = await prisma.record.findFirst({
+    where: { patientId, doctorId: userId },
+    select: { id: true },
+  });
+  return Boolean(record);
 }
 
-// ---- Список / поиск -------------------------------------------------------
-router.get('/patients', (req, res) => {
-  const db = getDb();
+function mapPatient(p) {
+  if (!p) return null;
+  return {
+    id: p.id, card_number: p.cardNumber, full_name: p.fullName,
+    birth_date: p.birthDate, sex: p.sex, oms_number: p.omsNumber,
+    blood_group: p.bloodGroup, allergies: p.allergies, phone: p.phone,
+    discord_id: p.discordId, status: p.status, created_by: p.createdBy,
+    created_at: p.createdAt,
+  };
+}
+
+function mapRecord(r) {
+  if (!r) return null;
+  return {
+    id: r.id, patient_id: r.patientId, doctor_id: r.doctorId,
+    visit_date: r.visitDate, record_type: r.recordType, complaints: r.complaints,
+    diagnosis_code: r.diagnosisCode, diagnosis_text: r.diagnosisText,
+    notes: r.notes, sick_leave_days: r.sickLeaveDays, created_at: r.createdAt,
+    doctor_name: r.doctor?.fullName,
+  };
+}
+
+function mapPrescription(p) {
+  if (!p) return null;
+  return {
+    id: p.id, prescription_number: p.prescriptionNumber, patient_id: p.patientId,
+    doctor_id: p.doctorId, medication: p.medication, dosage: p.dosage,
+    duration_days: p.durationDays, issued_at: p.issuedAt,
+    doctor_name: p.doctor?.fullName,
+  };
+}
+
+router.get('/patients', async (req, res) => {
   const q = String(req.query.query || '').trim();
   const limit = Math.min(Number(req.query.limit || 100), 200);
 
   let rows;
   if (q) {
-    const like = `%${q}%`;
-    rows = db
-      .prepare(
-        `SELECT id, card_number, full_name, birth_date, sex, oms_number, blood_group, phone, status, discord_id, created_at
-           FROM patients
-          WHERE full_name LIKE ? OR card_number LIKE ? OR oms_number LIKE ?
-          ORDER BY full_name
-          LIMIT ?`
-      )
-      .all(like, like, like, limit);
+    rows = await prisma.patients.findMany({
+      where: {
+        OR: [
+          { fullName: { contains: q } },
+          { cardNumber: { contains: q } },
+          { omsNumber: { contains: q } },
+        ],
+      },
+      orderBy: { fullName: 'asc' },
+      take: limit,
+    });
   } else {
-    rows = db
-      .prepare(
-        `SELECT id, card_number, full_name, birth_date, sex, oms_number, blood_group, phone, status, discord_id, created_at
-           FROM patients ORDER BY created_at DESC LIMIT ?`
-      )
-      .all(limit);
+    rows = await prisma.patients.findMany({
+      orderBy: { createdAt: 'desc' },
+      take: limit,
+    });
   }
-  res.json({ patients: rows });
+  res.json({ patients: rows.map(mapPatient) });
 });
 
-// ---- Регистрация пациента --------------------------------------------------
-router.post('/patients', (req, res) => {
-  const db = getDb();
+router.post('/patients', async (req, res) => {
   const { fullName, birthDate, sex, omsNumber, bloodGroup, allergies, phone } = req.body ?? {};
 
   if (!fullName || !String(fullName).trim()) {
@@ -81,108 +95,94 @@ router.post('/patients', (req, res) => {
   }
 
   if (omsNumber) {
-    const dup = db.prepare(`SELECT id FROM patients WHERE oms_number = ?`).get(String(omsNumber).trim());
+    const dup = await prisma.patients.findFirst({ where: { omsNumber: String(omsNumber).trim() } });
     if (dup) return res.status(409).json({ error: 'Пациент с таким полисом ОМС уже зарегистрирован' });
   }
 
-  const cardNumber = nextCardNumber(db);
-  const info = db
-    .prepare(
-      `INSERT INTO patients (card_number, full_name, birth_date, sex, oms_number, blood_group, allergies, phone, created_by)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(
+  const cardNumber = await nextCardNumber();
+  const patient = await prisma.patients.create({
+    data: {
       cardNumber,
-      String(fullName).trim(),
-      birthDate || null,
-      sex || null,
-      omsNumber ? String(omsNumber).trim() : null,
-      bloodGroup || null,
-      allergies || null,
-      phone || null,
-      req.user.id
-    );
+      fullName: String(fullName).trim(),
+      birthDate: birthDate || null,
+      sex: sex || null,
+      omsNumber: omsNumber ? String(omsNumber).trim() : null,
+      bloodGroup: bloodGroup || null,
+      allergies: allergies || null,
+      phone: phone || null,
+      createdBy: req.user.id,
+    },
+  });
 
-  const patient = db.prepare(`SELECT * FROM patients WHERE id = ?`).get(info.lastInsertRowid);
-  audit(db, {
+  audit({
     actorId: req.user.id, action: 'patient.create', entityType: 'patient',
     entityId: patient.id, details: { cardNumber }, ip: req.ip,
   });
-  hub.broadcast(WS_EVENTS.PATIENT_CREATED, { patientId: patient.id, cardNumber, fullName: patient.full_name, patient });
-  res.status(201).json({ patient });
+  hub.broadcast(WS_EVENTS.PATIENT_CREATED, { patientId: patient.id, cardNumber, fullName: patient.fullName, patient: mapPatient(patient) });
+  res.status(201).json({ patient: mapPatient(patient) });
 });
 
-// ---- Карточка пациента ------------------------------------------------------
-router.get('/patients/:id', (req, res) => {
-  const db = getDb();
-  const patient = db.prepare(`SELECT * FROM patients WHERE id = ?`).get(Number(req.params.id));
+router.get('/patients/:id', async (req, res) => {
+  const patient = await prisma.patients.findUnique({ where: { id: Number(req.params.id) } });
   if (!patient) return res.status(404).json({ error: 'Пациент не найден' });
 
-  // Демография доступна всему персоналу; медданные — по правилам RBAC выше.
   const includeMedical = canSeeMedicalData(req.user) &&
-    (isAdmin(req.user) || isTreatingDoctor(db, req.user.id, patient.id));
+    (isAdmin(req.user) || await isTreatingDoctor(req.user.id, patient.id));
 
-  const payload = { patient };
+  const payload = { patient: mapPatient(patient) };
 
   if (includeMedical) {
-    payload.records = db
-      .prepare(
-        `SELECT r.*, u.full_name AS doctor_name
-           FROM emr_records r LEFT JOIN users u ON u.id = r.doctor_id
-          WHERE r.patient_id = ? ORDER BY r.visit_date DESC`
-      )
-      .all(patient.id);
-    payload.prescriptions = db
-      .prepare(
-        `SELECT p.*, u.full_name AS doctor_name
-           FROM prescriptions p LEFT JOIN users u ON u.id = p.doctor_id
-          WHERE p.patient_id = ? ORDER BY p.issued_at DESC`
-      )
-      .all(patient.id);
+    const records = await prisma.record.findMany({
+      where: { patientId: patient.id },
+      include: { doctor: { select: { fullName: true } } },
+      orderBy: { visitDate: 'desc' },
+    });
+    payload.records = records.map(mapRecord);
+
+    const prescriptions = await prisma.prescription.findMany({
+      where: { patientId: patient.id },
+      include: { doctor: { select: { fullName: true } } },
+      orderBy: { issuedAt: 'desc' },
+    });
+    payload.prescriptions = prescriptions.map(mapPrescription);
   } else {
-    // Признак для клиента: медицинский блок скрыт (нет прав).
     payload.medicalRestricted = true;
   }
 
   res.json(payload);
 });
 
-// ---- Обновление демографии ---------------------------------------------------
-router.patch('/patients/:id', (req, res) => {
-  const db = getDb();
-  const patient = db.prepare(`SELECT * FROM patients WHERE id = ?`).get(Number(req.params.id));
+router.patch('/patients/:id', async (req, res) => {
+  const patient = await prisma.patients.findUnique({ where: { id: Number(req.params.id) } });
   if (!patient) return res.status(404).json({ error: 'Пациент не найден' });
 
-  const allowed = ['full_name', 'birth_date', 'sex', 'oms_number', 'blood_group', 'allergies', 'phone'];
-  const updates = [];
-  const values = [];
-  for (const key of allowed) {
-    if (key in (req.body ?? {})) {
-      updates.push(`${key} = ?`);
-      values.push(req.body[key] || null);
+  const fieldMap = {
+    full_name: 'fullName', birth_date: 'birthDate', sex: 'sex',
+    oms_number: 'omsNumber', blood_group: 'bloodGroup',
+    allergies: 'allergies', phone: 'phone',
+  };
+  const data = {};
+  for (const [snake, camel] of Object.entries(fieldMap)) {
+    if (snake in (req.body ?? {})) {
+      data[camel] = req.body[snake] || null;
     }
   }
-  if (!updates.length) return res.status(400).json({ error: 'Нет полей для обновления' });
+  if (!Object.keys(data).length) return res.status(400).json({ error: 'Нет полей для обновления' });
 
-  values.push(patient.id);
-  db.prepare(`UPDATE patients SET ${updates.join(', ')} WHERE id = ?`).run(...values);
-
-  const updated = db.prepare(`SELECT * FROM patients WHERE id = ?`).get(patient.id);
-  audit(db, {
+  const updated = await prisma.patients.update({ where: { id: patient.id }, data });
+  audit({
     actorId: req.user.id, action: 'patient.update', entityType: 'patient',
     entityId: patient.id, details: { fields: Object.keys(req.body ?? {}) }, ip: req.ip,
   });
   hub.broadcast(WS_EVENTS.PATIENT_UPDATED, { patientId: patient.id });
-  res.json({ patient: updated });
+  res.json({ patient: mapPatient(updated) });
 });
 
-// ---- Записи ЭМК -----------------------------------------------------------------
-router.post('/patients/:id/records', (req, res) => {
+router.post('/patients/:id/records', async (req, res) => {
   if (!canSeeMedicalData(req.user)) {
     return res.status(403).json({ error: 'Добавлять записи в ЭМК могут только врачи' });
   }
-  const db = getDb();
-  const patient = db.prepare(`SELECT * FROM patients WHERE id = ?`).get(Number(req.params.id));
+  const patient = await prisma.patients.findUnique({ where: { id: Number(req.params.id) } });
   if (!patient) return res.status(404).json({ error: 'Пациент не найден' });
 
   const { recordType, complaints, diagnosisCode, diagnosisText, notes, sickLeaveDays } = req.body ?? {};
@@ -192,41 +192,33 @@ router.post('/patients/:id/records', (req, res) => {
     return res.status(400).json({ error: 'Код диагноза должен соответствовать формату МКБ-10 (например J06.9)' });
   }
 
-  const info = db
-    .prepare(
-      `INSERT INTO emr_records (patient_id, doctor_id, record_type, complaints, diagnosis_code, diagnosis_text, notes, sick_leave_days)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
-    )
-    .run(
-      patient.id, req.user.id, type,
-      complaints || null,
-      diagnosisCode ? String(diagnosisCode).toUpperCase() : null,
-      diagnosisText || null, notes || null,
-      sickLeaveDays ? Number(sickLeaveDays) : null
-    );
+  const record = await prisma.record.create({
+    data: {
+      patientId: patient.id,
+      doctorId: req.user.id,
+      recordType: type,
+      complaints: complaints || null,
+      diagnosisCode: diagnosisCode ? String(diagnosisCode).toUpperCase() : null,
+      diagnosisText: diagnosisText || null,
+      notes: notes || null,
+      sickLeaveDays: sickLeaveDays ? Number(sickLeaveDays) : null,
+    },
+    include: { doctor: { select: { fullName: true } } },
+  });
 
-  const record = db
-    .prepare(
-      `SELECT r.*, u.full_name AS doctor_name FROM emr_records r
-        LEFT JOIN users u ON u.id = r.doctor_id WHERE r.id = ?`
-    )
-    .get(info.lastInsertRowid);
-
-  audit(db, {
+  audit({
     actorId: req.user.id, action: 'emr.record.create', entityType: 'emr_record',
-    entityId: record.id, details: { patientId: patient.id, diagnosisCode: record.diagnosis_code }, ip: req.ip,
+    entityId: record.id, details: { patientId: patient.id, diagnosisCode: record.diagnosisCode }, ip: req.ip,
   });
   hub.broadcast(WS_EVENTS.EMR_UPDATED, { patientId: patient.id });
-  res.status(201).json({ record });
+  res.status(201).json({ record: mapRecord(record) });
 });
 
-// ---- Рецепты ----------------------------------------------------------------------
-router.post('/patients/:id/prescriptions', (req, res) => {
+router.post('/patients/:id/prescriptions', async (req, res) => {
   if (!canSeeMedicalData(req.user)) {
     return res.status(403).json({ error: 'Выписывать рецепты могут только врачи' });
   }
-  const db = getDb();
-  const patient = db.prepare(`SELECT * FROM patients WHERE id = ?`).get(Number(req.params.id));
+  const patient = await prisma.patients.findUnique({ where: { id: Number(req.params.id) } });
   if (!patient) return res.status(404).json({ error: 'Пациент не найден' });
 
   const { medication, dosage, durationDays } = req.body ?? {};
@@ -234,27 +226,25 @@ router.post('/patients/:id/prescriptions', (req, res) => {
     return res.status(400).json({ error: 'Укажите препарат и дозировку' });
   }
 
-  const number = nextPrescriptionNumber(db);
-  const info = db
-    .prepare(
-      `INSERT INTO prescriptions (prescription_number, patient_id, doctor_id, medication, dosage, duration_days)
-       VALUES (?, ?, ?, ?, ?, ?)`
-    )
-    .run(number, patient.id, req.user.id, String(medication).trim(), String(dosage).trim(), durationDays ? Number(durationDays) : null);
+  const number = await nextPrescriptionNumber();
+  const prescription = await prisma.prescription.create({
+    data: {
+      prescriptionNumber: number,
+      patientId: patient.id,
+      doctorId: req.user.id,
+      medication: String(medication).trim(),
+      dosage: String(dosage).trim(),
+      durationDays: durationDays ? Number(durationDays) : null,
+    },
+    include: { doctor: { select: { fullName: true } } },
+  });
 
-  const prescription = db
-    .prepare(
-      `SELECT p.*, u.full_name AS doctor_name FROM prescriptions p
-        LEFT JOIN users u ON u.id = p.doctor_id WHERE p.id = ?`
-    )
-    .get(info.lastInsertRowid);
-
-  audit(db, {
+  audit({
     actorId: req.user.id, action: 'emr.prescription.create', entityType: 'prescription',
     entityId: prescription.id, details: { patientId: patient.id, medication }, ip: req.ip,
   });
   hub.broadcast(WS_EVENTS.EMR_UPDATED, { patientId: patient.id });
-  res.status(201).json({ prescription });
+  res.status(201).json({ prescription: mapPrescription(prescription) });
 });
 
 module.exports = router;

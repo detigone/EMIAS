@@ -1,12 +1,10 @@
-'use strict';
-
 /**
  * Личный кабинет граждан (персонажей).
  *
  * Модель доступа:
  *   Discord-аккаунт (citizen_accounts) → несколько персонажей (patients,
- *   привязанных полем patients.discord_id) → выбор персонажа при каждом входе
- *   (citizen_sessions.patient_id). Все данные выдаются ТОЛЬКО выбранного
+ *   привязанных полем patients.discordId) → выбор персонажа при каждом входе
+ *   (citizen_sessions.patientId). Все данные выдаются ТОЛЬКО выбранного
  *   персонажа — полной изоляции между аккаунтами.
  *
  * Маршруты:
@@ -25,7 +23,7 @@ const express = require('express');
 const env = require('../env');
 const citizenSessions = require('../auth/citizen-sessions');
 const staffSessions = require('../auth/sessions');
-const { getDb } = require('../db/connection');
+const { prisma } = require('../db/connection');
 const { audit } = require('../services/audit');
 const { nextCardNumber, nextTicketNumber } = require('../services/documents');
 const hub = require('../realtime/hub');
@@ -35,7 +33,6 @@ const router = express.Router();
 const DEV_DISCORD_ID = 'dev-local';
 const CLINIC = 'ГП №1, Кутузовский пр-т, д. 34';
 
-/** Ключи специальностей, которые ожидает фронт-бандл гражданина. */
 const SPECIALTY_MAP = {
   terapevt: 'therapist',
   terapevt2: 'therapist',
@@ -95,18 +92,18 @@ function memberShape(p) {
   return {
     id: 'p' + p.id,
     role: 'Персонаж',
-    fio: p.full_name,
-    short: shortName(p.full_name),
-    birth: fmtBirth(p.birth_date),
+    fio: p.fullName,
+    short: shortName(p.fullName),
+    birth: fmtBirth(p.birthDate),
     sex: sexLabel(p.sex),
-    policy: p.oms_number || '',
+    policy: p.omsNumber || '',
     clinic: CLINIC,
     phone: p.phone || '',
-    blood: p.blood_group || '',
+    blood: p.bloodGroup || '',
     allergies: p.allergies || '',
     status: p.status,
     avatar: {
-      initials: initialsOf(p.full_name),
+      initials: initialsOf(p.fullName),
       color: AVATAR_COLORS[p.id % AVATAR_COLORS.length],
     },
   };
@@ -116,7 +113,6 @@ function isDevAccount(account) {
   return env.DEV_LOGIN && account && account.discordId === DEV_DISCORD_ID;
 }
 
-/** Middleware: требует сессию гражданина (персонаж может быть не выбран). */
 function requireCitizen(req, res, next) {
   const s = citizenSessions.getSession(req);
   if (!s) return res.status(401).json({ error: 'Требуется вход гражданина' });
@@ -124,7 +120,6 @@ function requireCitizen(req, res, next) {
   next();
 }
 
-/** Middleware: требует выбранного активного персонажа. */
 function requirePatient(req, res, next) {
   requireCitizen(req, res, function () {
     if (!req.citizen.patient) {
@@ -139,51 +134,53 @@ function requirePatient(req, res, next) {
 
 // ---- Вход по коду из Discord (бот → сайт) ----------------------------------
 
-router.post('/api/citizen/auth/code', (req, res) => {
-  const db = getDb();
-  // Ensure table exists (for shared DB with Minzdrav)
-  db.exec(`CREATE TABLE IF NOT EXISTS site_auth_codes (
-    code TEXT PRIMARY KEY,
-    discord_id TEXT NOT NULL,
-    discord_username TEXT,
-    expires_at TEXT NOT NULL,
-    used_at TEXT
-  )`);
+router.post('/api/citizen/auth/code', async (req, res) => {
   const raw = String(req.body?.code || '').trim();
   if (!raw) return res.status(400).json({ error: 'Укажите код' });
   const code = raw.toUpperCase().replace(/[^A-Z0-9]/g, '');
-  const row = db.prepare(`SELECT * FROM site_auth_codes WHERE code = ?`).get(code);
+
+  const row = await prisma.siteAuthCode.findUnique({ where: { code } });
   if (!row) return res.status(404).json({ error: 'Код не найден' });
-  if (row.used_at) return res.status(409).json({ error: 'Код уже использован' });
-  if (new Date(row.expires_at) < new Date()) return res.status(410).json({ error: 'Код истёк (10 мин)' });
+  if (row.usedAt) return res.status(409).json({ error: 'Код уже использован' });
+  if (new Date(row.expiresAt) < new Date()) return res.status(410).json({ error: 'Код истёк (10 мин)' });
 
-  db.prepare(`UPDATE site_auth_codes SET used_at = datetime('now') WHERE code = ?`).run(code);
+  await prisma.siteAuthCode.update({ where: { code }, data: { usedAt: new Date() } });
 
-  let account = db.prepare(`SELECT * FROM citizen_accounts WHERE discord_id = ?`).get(row.discord_id);
+  let account = await prisma.citizenAccount.findUnique({ where: { discordId: row.discordId } });
   if (!account) {
-    const info = db.prepare(`INSERT INTO citizen_accounts (discord_id, discord_username, last_login_at) VALUES (?, ?, datetime('now'))`).run(row.discord_id, row.discord_username || null);
-    account = db.prepare(`SELECT * FROM citizen_accounts WHERE id = ?`).get(info.lastInsertRowid);
+    account = await prisma.citizenAccount.create({
+      data: {
+        discordId: row.discordId,
+        discordUsername: row.discordUsername || null,
+        lastLoginAt: new Date(),
+      },
+    });
   } else {
-    db.prepare(`UPDATE citizen_accounts SET last_login_at = datetime('now'), discord_username = COALESCE(?, discord_username) WHERE id = ?`).run(row.discord_username || null, account.id);
+    account = await prisma.citizenAccount.update({
+      where: { id: account.id },
+      data: {
+        lastLoginAt: new Date(),
+        discordUsername: row.discordUsername || account.discordUsername,
+      },
+    });
   }
 
   const isSecure = env.PUBLIC_BASE_URL.startsWith('https');
-  const session = citizenSessions.createSession(account.id, null, isSecure);
+  const sessionAccount = { id: account.id, discordId: account.discordId, username: account.discordUsername, avatar: null };
+  const session = citizenSessions.createSession(sessionAccount, null, isSecure);
 
-  // Если этот Discord — сотрудник, создаём и staff-сессию чтобы сайт и бот видели один аккаунт
   let staffCookie = null;
-  const staffUser = db.prepare(`SELECT * FROM users WHERE discord_id = ? AND is_active = 1`).get(row.discord_id);
-  if (staffUser) {
+  const staffUser = await prisma.users.findUnique({ where: { discordId: row.discordId } });
+  if (staffUser && staffUser.isActive) {
     const staffSess = staffSessions.createSession(staffUser.id, isSecure);
     staffCookie = staffSess.cookie;
-    audit(db, { action: 'staff.site_code', entityType: 'user', entityId: staffUser.id, details: { code, discordId: row.discord_id }, ip: req.ip });
+    audit({ action: 'staff.site_code', entityType: 'user', entityId: staffUser.id, details: { code, discordId: row.discordId }, ip: req.ip });
   }
 
-  audit(db, { action: 'citizen.site_code', entityType: 'citizen_account', entityId: account.id, details: { code, discordId: row.discord_id }, ip: req.ip });
-  // Отдаём оба cookie если есть staff
+  audit({ action: 'citizen.site_code', entityType: 'citizen_account', entityId: account.id, details: { code, discordId: row.discordId }, ip: req.ip });
   if (staffCookie) res.setHeader('Set-Cookie', [session.cookie, staffCookie]);
   else res.setHeader('Set-Cookie', session.cookie);
-  res.json({ ok: true, account: { discordId: account.discord_id, username: account.discord_username }, isStaff: !!staffUser });
+  res.json({ ok: true, account: { discordId: account.discordId, username: account.discordUsername }, isStaff: !!staffUser });
 });
 
 // ---- Состояние сессии -------------------------------------------------------
@@ -196,66 +193,71 @@ router.get('/api/citizen/state', (req, res) => {
     needsPick: !s.patient,
     account: s.account,
     patient: s.patient
-      ? { id: s.patient.id, fullName: s.patient.full_name, cardNumber: s.patient.card_number, status: s.patient.status }
+      ? { id: s.patient.id, fullName: s.patient.fullName, cardNumber: s.patient.cardNumber, status: s.patient.status }
       : null,
   });
 });
 
 // Демо-вход гражданина — пароль ZZZ3295
-router.post('/api/citizen/dev-auth', (req, res) => {
+router.post('/api/citizen/dev-auth', async (req, res) => {
   const pass = String(req.body?.password || '').trim();
   if (pass !== 'ZZZ3295') {
     return res.status(403).json({ error: 'Неверный пароль демо' });
   }
-  const db = getDb();
-  let account = db.prepare(`SELECT * FROM citizen_accounts WHERE discord_id = ?`).get(DEV_DISCORD_ID);
+
+  let account = await prisma.citizenAccount.findUnique({ where: { discordId: DEV_DISCORD_ID } });
   if (!account) {
-    const info = db
-      .prepare(`INSERT INTO citizen_accounts (discord_id, discord_username) VALUES (?, ?)`)
-      .run(DEV_DISCORD_ID, 'dev-local');
-    account = db.prepare(`SELECT * FROM citizen_accounts WHERE id = ?`).get(info.lastInsertRowid);
+    account = await prisma.citizenAccount.create({
+      data: { discordId: DEV_DISCORD_ID, discordUsername: 'dev-local' },
+    });
+  } else {
+    await prisma.citizenAccount.update({
+      where: { id: account.id },
+      data: { lastLoginAt: new Date() },
+    });
   }
-  db.prepare(`UPDATE citizen_accounts SET last_login_at = datetime('now') WHERE id = ?`).run(account.id);
 
   const patientId = Number(req.body?.patientId || 0);
+  let sessionPatient = null;
   if (patientId) {
-    const patient = db.prepare(`SELECT * FROM patients WHERE id = ?`).get(patientId);
-    if (!patient) return res.status(404).json({ error: 'Персонаж не найден' });
-    if (patient.status === 'blocked') return res.status(403).json({ error: 'Аккаунт заблокирован' });
+    sessionPatient = await prisma.patients.findUnique({ where: { id: patientId } });
+    if (!sessionPatient) return res.status(404).json({ error: 'Персонаж не найден' });
+    if (sessionPatient.status === 'blocked') return res.status(403).json({ error: 'Аккаунт заблокирован' });
   }
+
   const isSecure = env.PUBLIC_BASE_URL.startsWith('https');
-  const session = citizenSessions.createSession(account.id, patientId || null, isSecure);
-  audit(db, { action: 'citizen.dev_login', entityType: 'patient', entityId: patientId || null, ip: req.ip });
+  const sessionAccount = { id: account.id, discordId: account.discordId, username: account.discordUsername, avatar: null };
+  const session = citizenSessions.createSession(sessionAccount, sessionPatient, isSecure);
+  audit({ action: 'citizen.dev_login', entityType: 'patient', entityId: patientId || null, ip: req.ip });
   res.setHeader('Set-Cookie', session.cookie);
   res.json({ ok: true });
 });
 
 // ---- Персонажи --------------------------------------------------------------
 
-router.get('/api/citizen/profiles', requireCitizen, (req, res) => {
-  const db = getDb();
+router.get('/api/citizen/profiles', requireCitizen, async (req, res) => {
   let rows;
   if (isDevAccount(req.citizen.account)) {
-    rows = db.prepare(`SELECT * FROM patients WHERE status != 'blocked' ORDER BY full_name`).all();
+    rows = await prisma.patients.findMany({ where: { status: { not: 'blocked' } }, orderBy: { fullName: 'asc' } });
   } else {
-    rows = db
-      .prepare(`SELECT * FROM patients WHERE discord_id = ? AND status != 'blocked' ORDER BY id`)
-      .all(req.citizen.account.discordId);
+    rows = await prisma.patients.findMany({
+      where: { discordId: req.citizen.account.discordId, status: { not: 'blocked' } },
+      orderBy: { id: 'asc' },
+    });
   }
   res.json({
     profiles: rows.map((p) => ({
       id: p.id,
-      fullName: p.full_name,
-      cardNumber: p.card_number,
-      birthDate: p.birth_date,
+      fullName: p.fullName,
+      cardNumber: p.cardNumber,
+      birthDate: p.birthDate,
       sex: p.sex,
       status: p.status,
     })),
   });
 });
 
-router.post('/api/citizen/profiles', requireCitizen, (req, res) => {
-  const db = getDb();
+router.post('/api/citizen/profiles', requireCitizen, async (req, res) => {
   const fullName = String(req.body?.fullName || '').trim();
   if (!fullName) return res.status(400).json({ error: 'Укажите ФИО персонажа' });
 
@@ -264,28 +266,25 @@ router.post('/api/citizen/profiles', requireCitizen, (req, res) => {
   const oms = String(req.body?.omsNumber || '').trim() || null;
 
   if (oms) {
-    const dup = db.prepare(`SELECT id FROM patients WHERE oms_number = ?`).get(oms);
+    const dup = await prisma.patients.findFirst({ where: { omsNumber: oms } });
     if (dup) return res.status(409).json({ error: 'Полис ОМС уже привязан к другому персонажу' });
   }
 
-  const cardNumber = nextCardNumber(db);
-  const info = db
-    .prepare(
-      `INSERT INTO patients (card_number, full_name, birth_date, sex, oms_number, phone, discord_id, status)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'active')`
-    )
-    .run(
+  const cardNumber = await nextCardNumber();
+  const patient = await prisma.patients.create({
+    data: {
       cardNumber,
       fullName,
-      req.body?.birthDate || null,
+      birthDate: req.body?.birthDate || null,
       sex,
-      oms,
-      String(req.body?.phone || '').trim() || null,
-      req.citizen.account.discordId
-    );
-  const patient = db.prepare(`SELECT * FROM patients WHERE id = ?`).get(info.lastInsertRowid);
+      omsNumber: oms,
+      phone: String(req.body?.phone || '').trim() || null,
+      discordId: req.citizen.account.discordId,
+      status: 'active',
+    },
+  });
 
-  audit(db, {
+  audit({
     action: 'citizen.profile.create',
     entityType: 'patient',
     entityId: patient.id,
@@ -293,31 +292,28 @@ router.post('/api/citizen/profiles', requireCitizen, (req, res) => {
     ip: req.ip,
   });
 
-  // Сразу выбираем созданного персонажа.
   const isSecure = env.PUBLIC_BASE_URL.startsWith('https');
-  citizenSessions.setPatient(req.citizen.token, patient.id);
+  citizenSessions.setPatient(req.citizen.token, patient);
   res.status(201).json({
     ok: true,
-    profile: { id: patient.id, fullName: patient.full_name, cardNumber: patient.card_number },
+    profile: { id: patient.id, fullName: patient.fullName, cardNumber: patient.cardNumber },
     cookieHint: isSecure ? 'secure' : 'insecure',
   });
 });
 
 // ---- Выбор персонажа / выход --------------------------------------------------
 
-router.post('/api/citizen/select', requireCitizen, (req, res) => {
-  const db = getDb();
+router.post('/api/citizen/select', requireCitizen, async (req, res) => {
   const patientId = Number(req.body?.patientId || 0);
-  const patient = db.prepare(`SELECT * FROM patients WHERE id = ?`).get(patientId);
+  const patient = await prisma.patients.findUnique({ where: { id: patientId } });
   if (!patient) return res.status(404).json({ error: 'Персонаж не найден' });
   if (patient.status === 'blocked') return res.status(403).json({ error: 'Аккаунт заблокирован администрацией' });
 
-  const own =
-    isDevAccount(req.citizen.account) || patient.discord_id === req.citizen.account.discordId;
+  const own = isDevAccount(req.citizen.account) || patient.discordId === req.citizen.account.discordId;
   if (!own) return res.status(403).json({ error: 'Этот персонаж принадлежит другому аккаунту' });
 
-  citizenSessions.setPatient(req.citizen.token, patient.id);
-  audit(db, { action: 'citizen.select', entityType: 'patient', entityId: patient.id, ip: req.ip });
+  citizenSessions.setPatient(req.citizen.token, patient);
+  audit({ action: 'citizen.select', entityType: 'patient', entityId: patient.id, ip: req.ip });
   res.json({ ok: true });
 });
 
@@ -330,28 +326,26 @@ router.post('/api/citizen/logout', (req, res) => {
 
 // ---- Bootstrap: все данные приложения одного персонажа ------------------------
 
-router.get('/api/citizen/bootstrap', requirePatient, (req, res) => {
-  const db = getDb();
+router.get('/api/citizen/bootstrap', requirePatient, async (req, res) => {
   const me = req.citizen.patient;
 
-  // Все персонажи этого Discord (семья), выбранный — первым.
   const family = isDevAccount(req.citizen.account)
-    ? db.prepare(`SELECT * FROM patients WHERE status != 'blocked' ORDER BY id`).all()
-    : db
-        .prepare(`SELECT * FROM patients WHERE discord_id = ? AND status != 'blocked' ORDER BY id`)
-        .all(req.citizen.account.discordId);
+    ? await prisma.patients.findMany({ where: { status: { not: 'blocked' } }, orderBy: { id: 'asc' } })
+    : await prisma.patients.findMany({
+        where: { discordId: req.citizen.account.discordId, status: { not: 'blocked' } },
+        orderBy: { id: 'asc' },
+      });
   const ordered = [me, ...family.filter((p) => p.id !== me.id)];
   const members = ordered.map(memberShape);
 
-  // Врачи по специальностям (формат бандла).
-  const staff = db.prepare(`SELECT * FROM users WHERE is_active = 1 ORDER BY full_name`).all();
+  const staff = await prisma.users.findMany({ where: { isActive: true }, orderBy: { fullName: 'asc' } });
   const doctors = {};
   for (const u of staff) {
     const key = specialtyKey(u.specialty);
     if (!doctors[key]) doctors[key] = [];
     doctors[key].push({
       id: 'd' + u.id,
-      name: u.full_name,
+      name: u.fullName,
       exp: 5 + ((u.id * 7) % 20),
       rating: Math.round((4.5 + ((u.id % 5) / 10)) * 10) / 10,
       clinic: CLINIC,
@@ -359,7 +353,6 @@ router.get('/api/citizen/bootstrap', requirePatient, (req, res) => {
     });
   }
 
-  // Талоны (активные) и медкарта — строго по каждому персонажу семьи.
   const appointments = {};
   const records = {};
   const notifications = {};
@@ -368,22 +361,19 @@ router.get('/api/citizen/bootstrap', requirePatient, (req, res) => {
   for (const p of ordered) {
     const key = 'p' + p.id;
 
-    const tickets = db
-      .prepare(
-        `SELECT a.*, u.full_name AS doctor_name, u.specialty AS doc_spec
-           FROM appointments a LEFT JOIN users u ON u.id = a.doctor_id
-          WHERE a.patient_id = ? AND a.status IN ('waiting', 'in_room')
-          ORDER BY a.date, a.time`
-      )
-      .all(p.id);
+    const tickets = await prisma.appointment.findMany({
+      where: { patientId: p.id, status: { in: ['waiting', 'in_room'] } },
+      include: { doctor: true },
+      orderBy: [{ date: 'asc' }, { time: 'asc' }],
+    });
     appointments[key] = tickets.map((t) => {
-      const specKey = specialtyKey(t.doc_spec);
+      const specKey = specialtyKey(t.doctor?.specialty);
       return {
         id: 'a' + t.id,
         specialistId: specKey,
         specialist: SPECIALTY_LABELS[specKey],
-        doctorId: t.doctor_id ? 'd' + t.doctor_id : null,
-        doctor: t.doctor_name || '',
+        doctorId: t.doctorId ? 'd' + t.doctorId : null,
+        doctor: t.doctor?.fullName || '',
         date: t.date,
         time: t.time,
         room: t.room || '',
@@ -392,34 +382,32 @@ router.get('/api/citizen/bootstrap', requirePatient, (req, res) => {
       };
     });
 
-    const rowsRec = db
-      .prepare(
-        `SELECT e.*, u.full_name AS doctor_name, u.specialty AS doc_spec
-           FROM emr_records e LEFT JOIN users u ON u.id = e.doctor_id
-          WHERE e.patient_id = ? ORDER BY e.visit_date DESC`
-      )
-      .all(p.id);
+    const rowsRec = await prisma.record.findMany({
+      where: { patientId: p.id },
+      include: { doctor: true },
+      orderBy: { visitDate: 'desc' },
+    });
 
     const analyses = [];
     const protocols = [];
     for (const r of rowsRec) {
-      const specKey = specialtyKey(r.doc_spec);
-      if (r.record_type === 'lab') {
+      const specKey = specialtyKey(r.doctor?.specialty);
+      if (r.recordType === 'lab') {
         analyses.push({
           id: 'la' + r.id,
-          title: r.diagnosis_text || r.complaints || 'Лабораторное исследование',
-          date: String(r.visit_date).slice(0, 10),
+          title: r.diagnosisText || r.complaints || 'Лабораторное исследование',
+          date: String(r.visitDate).slice(0, 10),
           status: 'ready',
           items: [],
         });
       } else {
-        const dx = [r.diagnosis_text, r.diagnosis_code ? `(${r.diagnosis_code})` : '']
+        const dx = [r.diagnosisText, r.diagnosisCode ? `(${r.diagnosisCode})` : '']
           .filter(Boolean)
           .join(' ');
         protocols.push({
           id: 'pr' + r.id,
-          date: String(r.visit_date).slice(0, 10),
-          doctor: r.doctor_name || '',
+          date: String(r.visitDate).slice(0, 10),
+          doctor: r.doctor?.fullName || '',
           specialty: SPECIALTY_LABELS[specKey],
           diagnosis: dx || 'Без диагноза',
           recommendation: r.notes || r.complaints || '',
@@ -427,25 +415,32 @@ router.get('/api/citizen/bootstrap', requirePatient, (req, res) => {
       }
     }
 
-    const recipes = db
-      .prepare(`SELECT * FROM prescriptions WHERE patient_id = ? ORDER BY issued_at DESC`)
-      .all(p.id)
-      .map((x) => ({
-        id: 'r' + x.id,
-        drug: x.medication,
-        dosage: x.dosage,
-        doctor: x.doctor_id ? doctorShort((db.prepare(`SELECT full_name FROM users WHERE id=?`).get(x.doctor_id) || {}).full_name || '') : '',
-        issued: String(x.issued_at).slice(0, 10),
-        expires: new Date(new Date(String(x.issued_at).replace(' ', 'T')).getTime() + 90 * 864e5)
-          .toISOString()
-          .slice(0, 10),
-        status: 'active',
-        qr: 'RX-' + String(x.prescription_number || x.id),
-      }));
+    const prescriptions = await prisma.prescription.findMany({
+      where: { patientId: p.id },
+      orderBy: { issuedAt: 'desc' },
+    });
+
+    const prescDoctorIds = [...new Set(prescriptions.map((x) => x.doctorId).filter(Boolean))];
+    const prescDoctors = prescDoctorIds.length
+      ? await prisma.users.findMany({ where: { id: { in: prescDoctorIds } }, select: { id: true, fullName: true } })
+      : [];
+    const prescDoctorMap = Object.fromEntries(prescDoctors.map((d) => [d.id, d.fullName]));
+
+    const recipes = prescriptions.map((x) => ({
+      id: 'r' + x.id,
+      drug: x.medication,
+      dosage: x.dosage,
+      doctor: x.doctorId ? doctorShort(prescDoctorMap[x.doctorId] || '') : '',
+      issued: String(x.issuedAt).slice(0, 10),
+      expires: new Date(new Date(String(x.issuedAt).replace(' ', 'T')).getTime() + 90 * 864e5)
+        .toISOString()
+        .slice(0, 10),
+      status: 'active',
+      qr: 'RX-' + String(x.prescriptionNumber || x.id),
+    }));
 
     records[key] = { analyses, protocols, recipes, vaccines: [] };
 
-    // Уведомления: напоминания о приёмах + готовые анализы + рецепты.
     const notes = [];
     for (const t of appointments[key]) {
       notes.push({
@@ -485,22 +480,21 @@ router.get('/api/citizen/bootstrap', requirePatient, (req, res) => {
 
 // ---- Привязка Discord через бота ----------------------------------------------
 
-router.get('/api/citizen/link-code', requirePatient, (req, res) => {
-  const db = getDb();
+router.get('/api/citizen/link-code', requirePatient, async (req, res) => {
   const me = req.citizen.patient;
-  // Гасим старые неиспользованные коды персонажа.
-  db.prepare(`DELETE FROM link_codes WHERE patient_id = ? AND used_at IS NULL`).run(me.id);
+  await prisma.linkCode.deleteMany({ where: { patientId: me.id, usedAt: null } });
   const code = Math.random().toString(36).slice(2, 8).toUpperCase();
-  const expires = new Date(Date.now() + 15 * 60 * 1000).toISOString();
-  db.prepare(`INSERT INTO link_codes (code, patient_id, expires_at) VALUES (?, ?, ?)`).run(code, me.id, expires);
-  audit(db, { action: 'citizen.link_code', entityType: 'patient', entityId: me.id, ip: req.ip });
+  const expires = new Date(Date.now() + 15 * 60 * 1000);
+  await prisma.linkCode.create({
+    data: { code, patientId: me.id, expiresAt: expires },
+  });
+  audit({ action: 'citizen.link_code', entityType: 'patient', entityId: me.id, ip: req.ip });
   res.json({ code, expiresInMin: 15 });
 });
 
 // ---- Запись к врачу (создаёт реальный талон в общей БД) ------------------------
 
-router.post('/api/citizen/appointments', requirePatient, (req, res) => {
-  const db = getDb();
+router.post('/api/citizen/appointments', requirePatient, async (req, res) => {
   const me = req.citizen.patient;
   const date = String(req.body?.date || '');
   const time = String(req.body?.time || '');
@@ -512,44 +506,36 @@ router.post('/api/citizen/appointments', requirePatient, (req, res) => {
   }
 
   let doctor = null;
-  const doctorRef = String(req.body?.doctorId || ''); // 'd<num>' из бандла
+  const doctorRef = String(req.body?.doctorId || '');
   if (doctorRef) {
     const userId = Number(doctorRef.replace(/^d/, ''));
-    doctor = db.prepare(`SELECT * FROM users WHERE id = ? AND is_active = 1`).get(userId);
+    doctor = await prisma.users.findFirst({ where: { id: userId, isActive: true } });
     if (!doctor) return res.status(404).json({ error: 'Врач не найден' });
-    const conflictDoc = db
-      .prepare(
-        `SELECT id FROM appointments WHERE doctor_id = ? AND date = ? AND time = ? AND status IN ('waiting','in_room')`
-      )
-      .get(doctor.id, date, time);
+    const conflictDoc = await prisma.appointment.findFirst({
+      where: { doctorId: doctor.id, date, time, status: { in: ['waiting', 'in_room'] } },
+    });
     if (conflictDoc) return res.status(409).json({ error: 'У врача уже занято это время' });
   }
 
-  const conflictSelf = db
-    .prepare(
-      `SELECT id FROM appointments WHERE patient_id = ? AND date = ? AND time = ? AND status IN ('waiting','in_room')`
-    )
-    .get(me.id, date, time);
+  const conflictSelf = await prisma.appointment.findFirst({
+    where: { patientId: me.id, date, time, status: { in: ['waiting', 'in_room'] } },
+  });
   if (conflictSelf) return res.status(409).json({ error: 'У вас уже есть талон на это время' });
 
-  const number = nextTicketNumber(db, date);
-  const info = db
-    .prepare(
-      `INSERT INTO appointments (ticket_number, patient_id, doctor_id, date, time, status, room, created_by)
-       VALUES (?, ?, ?, ?, ?, 'waiting', NULL, NULL)`
-    )
-    .run(number, me.id, doctor ? doctor.id : null, date, time);
+  const number = await nextTicketNumber(date);
+  const appointment = await prisma.appointment.create({
+    data: {
+      ticketNumber: number,
+      patientId: me.id,
+      doctorId: doctor ? doctor.id : null,
+      date,
+      time,
+      status: 'waiting',
+    },
+    include: { patient: true, doctor: true },
+  });
 
-  const appointment = db
-    .prepare(
-      `SELECT a.*, p.full_name AS patient_name, p.card_number AS patient_card,
-              u.full_name AS doctor_name, u.specialty AS doctor_specialty
-         FROM appointments a JOIN patients p ON p.id = a.patient_id
-         LEFT JOIN users u ON u.id = a.doctor_id WHERE a.id = ?`
-    )
-    .get(info.lastInsertRowid);
-
-  audit(db, {
+  audit({
     action: 'citizen.booking',
     entityType: 'appointment',
     entityId: appointment.id,
@@ -562,18 +548,20 @@ router.post('/api/citizen/appointments', requirePatient, (req, res) => {
   res.status(201).json({ ok: true, appointment });
 });
 
-router.post('/api/citizen/appointments/:id/cancel', requirePatient, (req, res) => {
-  const db = getDb();
+router.post('/api/citizen/appointments/:id/cancel', requirePatient, async (req, res) => {
   const me = req.citizen.patient;
-  const ticket = db.prepare(`SELECT * FROM appointments WHERE id = ?`).get(Number(req.params.id));
+  const ticket = await prisma.appointment.findUnique({ where: { id: Number(req.params.id) } });
   if (!ticket) return res.status(404).json({ error: 'Талон не найден' });
-  if (ticket.patient_id !== me.id) return res.status(403).json({ error: 'Это не ваш талон' });
+  if (ticket.patientId !== me.id) return res.status(403).json({ error: 'Это не ваш талон' });
   if (ticket.status !== 'waiting') {
     return res.status(409).json({ error: 'Отменить можно только талон в статусе «Ожидание»' });
   }
-  db.prepare(`UPDATE appointments SET status = 'cancelled', updated_at = datetime('now') WHERE id = ?`).run(ticket.id);
+  await prisma.appointment.update({
+    where: { id: ticket.id },
+    data: { status: 'cancelled', updatedAt: new Date() },
+  });
 
-  audit(db, {
+  audit({
     action: 'citizen.cancel',
     entityType: 'appointment',
     entityId: ticket.id,

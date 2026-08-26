@@ -1,5 +1,3 @@
-'use strict';
-
 /**
  * Аутентификация и профиль.
  *   GET  /auth/discord    — редирект на согласие Discord (state + PKCE)
@@ -17,7 +15,7 @@ const sessions = require('../auth/sessions');
 const citizenSessions = require('../auth/citizen-sessions');
 const { requireAuth } = require('../middleware/rbac');
 const { audit } = require('../services/audit');
-const { getDb } = require('../db/connection');
+const { prisma } = require('../db/connection');
 const { ROLES, PROJECT } = require('../../shared/constants');
 
 const router = express.Router();
@@ -46,7 +44,6 @@ router.get('/auth/discord', (req, res) => {
 
 router.get('/auth/callback', async (req, res) => {
   const isSecure = env.PUBLIC_BASE_URL.startsWith('https');
-  // Режим определяем по куке, выставленной на /auth/discord.
   const modeCookie = String(req.headers.cookie || '')
     .split(';')
     .map((p) => p.trim())
@@ -70,25 +67,28 @@ router.get('/auth/callback', async (req, res) => {
 
     const isCitizenMode = getState(OAUTH_MODE_COOKIE) === 'citizen';
     if (isCitizenMode) {
-      // Гражданин: создаём/обновляем Discord-аккаунт и сессию без выбранного
-      // персонажа — выбор происходит на странице входа при каждом визите.
-      const db = getDb();
-      let account = db.prepare(`SELECT * FROM citizen_accounts WHERE discord_id = ?`).get(profile.id);
+      let account = await prisma.citizenAccount.findUnique({ where: { discordId: profile.id } });
       if (!account) {
-        const info = db
-          .prepare(
-            `INSERT INTO citizen_accounts (discord_id, discord_username, discord_avatar, last_login_at)
-             VALUES (?, ?, ?, datetime('now'))`
-          )
-          .run(profile.id, profile.username, profile.avatar);
-        account = { id: info.lastInsertRowid };
+        account = await prisma.citizenAccount.create({
+          data: {
+            discordId: profile.id,
+            discordUsername: profile.username,
+            discordAvatar: profile.avatar,
+            lastLoginAt: new Date(),
+          },
+        });
       } else {
-        db.prepare(
-          `UPDATE citizen_accounts SET discord_username = ?, discord_avatar = ?, last_login_at = datetime('now') WHERE id = ?`
-        ).run(profile.username, profile.avatar, account.id);
+        await prisma.citizenAccount.update({
+          where: { id: account.id },
+          data: {
+            discordUsername: profile.username,
+            discordAvatar: profile.avatar,
+            lastLoginAt: new Date(),
+          },
+        });
       }
       const citizenSession = citizenSessions.createSession(account.id, null, isSecure);
-      audit(getDb(), {
+      audit({
         action: 'citizen.login',
         entityType: 'citizen_account',
         entityId: account.id,
@@ -103,30 +103,35 @@ router.get('/auth/callback', async (req, res) => {
       return res.redirect('/login.html?tab=citizen&authed=1');
     }
 
-    const db = getDb();
-
-    // Роль при первом входе: из ADMIN_DISCORD_IDS → «Главный врач», иначе «Врач».
-    let user = db.prepare(`SELECT * FROM users WHERE discord_id = ?`).get(profile.id);
+    let user = await prisma.users.findUnique({ where: { discordId: profile.id } });
     if (!user) {
       const role = env.ADMIN_DISCORD_IDS.includes(profile.id) ? ROLES.HEAD_PHYSICIAN : ROLES.PHYSICIAN;
       const displayName = profile.global_name || profile.username;
-      const result = db
-        .prepare(
-          `INSERT INTO users (discord_id, discord_username, discord_avatar, full_name, role, status)
-           VALUES (?, ?, ?, ?, ?, 'free')`
-        )
-        .run(profile.id, profile.username, profile.avatar, displayName, role);
-      user = db.prepare(`SELECT * FROM users WHERE id = ?`).get(result.lastInsertRowid);
+      user = await prisma.users.create({
+        data: {
+          discordId: profile.id,
+          discordUsername: profile.username,
+          discordAvatar: profile.avatar,
+          fullName: displayName,
+          role,
+          status: 'free',
+        },
+      });
     } else {
-      db.prepare(`UPDATE users SET discord_username = ?, discord_avatar = ? WHERE id = ?`).run(
-        profile.username,
-        profile.avatar,
-        user.id
-      );
+      await prisma.users.update({
+        where: { id: user.id },
+        data: {
+          discordUsername: profile.username,
+          discordAvatar: profile.avatar,
+        },
+      });
     }
 
-    const session = sessions.createSession(user.id, isSecure);
-    audit(db, { actorId: user.id, action: 'auth.login', entityType: 'user', entityId: user.id, ip: req.ip });
+    const session = sessions.createSession(
+      { id: user.id, discord_id: user.discordId, discord_username: user.discordUsername, discord_avatar: user.discordAvatar, full_name: user.fullName, specialty: user.specialty, role: user.role, status: user.status, is_active: user.isActive },
+      isSecure
+    );
+    audit({ actorId: user.id, action: 'auth.login', entityType: 'user', entityId: user.id, ip: req.ip });
 
     res.setHeader('Set-Cookie', [
       session.cookie,
@@ -146,13 +151,12 @@ router.post('/auth/logout', (req, res) => {
   const user = sessions.getSessionUser(req);
   sessions.destroySession(req);
   if (user) {
-    audit(getDb(), { actorId: user.id, action: 'auth.logout', entityType: 'user', entityId: user.id, ip: req.ip });
+    audit({ actorId: user.id, action: 'auth.logout', entityType: 'user', entityId: user.id, ip: req.ip });
   }
   res.setHeader('Set-Cookie', sessions.clearCookie(isSecure));
   res.json({ ok: true });
 });
 
-// Публичная информация для страницы входа (без секретов).
 router.get('/api/setup', (req, res) => {
   res.json({
     projectName: PROJECT.NAME,
@@ -167,24 +171,25 @@ router.get('/api/me', requireAuth, (req, res) => {
   res.json({ user: req.user });
 });
 
-// Демо-вход — пароль ZZZ3295 (работает и в проде)
-router.post('/auth/dev-login', (req, res) => {
+router.post('/auth/dev-login', async (req, res) => {
   const pass = String(req.body?.password || '').trim();
   if (pass !== 'ZZZ3295') {
     return res.status(403).json({ error: 'Неверный пароль демо' });
   }
-  const db = getDb();
   const userId = Number(req.body?.userId || 0);
   const user = userId
-    ? db.prepare(`SELECT * FROM users WHERE id = ? AND is_active = 1`).get(userId)
-    : db.prepare(`SELECT * FROM users WHERE is_active = 1 ORDER BY id LIMIT 1`).get();
+    ? await prisma.users.findUnique({ where: { id: userId, isActive: true } })
+    : (await prisma.users.findMany({ where: { isActive: true }, take: 1, orderBy: { id: 'asc' } }))[0];
   if (!user) return res.status(404).json({ error: 'Демо-пользователи не найдены (npm run db:seed)' });
 
   const isSecure = env.PUBLIC_BASE_URL.startsWith('https');
-  const session = sessions.createSession(user.id, isSecure);
-  audit(db, { actorId: user.id, action: 'auth.dev_login', entityType: 'user', entityId: user.id, ip: req.ip });
+  const session = sessions.createSession(
+    { id: user.id, discord_id: user.discordId, discord_username: user.discordUsername, discord_avatar: user.discordAvatar, full_name: user.fullName, specialty: user.specialty, role: user.role, status: user.status, is_active: user.isActive },
+    isSecure
+  );
+  audit({ actorId: user.id, action: 'auth.dev_login', entityType: 'user', entityId: user.id, ip: req.ip });
   res.setHeader('Set-Cookie', session.cookie);
-  res.json({ ok: true, user: { id: user.id, full_name: user.full_name, role: user.role, specialty: user.specialty || null, status: user.status || 'free' } });
+  res.json({ ok: true, user: { id: user.id, full_name: user.fullName, role: user.role, specialty: user.specialty || null, status: user.status || 'free' } });
 });
 
 module.exports = router;
