@@ -165,6 +165,18 @@ model LinkCode {
   @@schema("emias")
 }
 
+model SiteAuthCode {
+  code            String    @id
+  discordId       String    @map("discord_id")
+  discordUsername String?   @map("discord_username")
+  expiresAt       DateTime  @map("expires_at")
+  usedAt          DateTime? @map("used_at")
+  guildId         String    @default("") @map("guild_id")
+
+  @@index([discordId])
+  @@schema("emias")
+}
+
 model CitizenAccount {
   id              Int       @id @default(autoincrement())
   discordId       String    @unique @map("discord_id")

@@ -132,6 +132,57 @@ function requirePatient(req, res, next) {
   });
 }
 
+// ---- Вход по коду из Discord (бот → сайт) ----------------------------------
+
+router.post('/api/citizen/auth/code', async (req, res) => {
+  const raw = String(req.body?.code || '').trim();
+  if (!raw) return res.status(400).json({ error: 'Укажите код' });
+  const code = raw.toUpperCase().replace(/[^A-Z0-9]/g, '');
+
+  const row = await prisma.siteAuthCode.findUnique({ where: { code } });
+  if (!row) return res.status(404).json({ error: 'Код не найден' });
+  if (row.usedAt) return res.status(409).json({ error: 'Код уже использован' });
+  if (new Date(row.expiresAt) < new Date()) return res.status(410).json({ error: 'Код истёк (10 мин)' });
+
+  await prisma.siteAuthCode.update({ where: { code }, data: { usedAt: new Date() } });
+
+  let account = await prisma.citizenAccount.findUnique({ where: { discordId: row.discordId } });
+  if (!account) {
+    account = await prisma.citizenAccount.create({
+      data: {
+        discordId: row.discordId,
+        discordUsername: row.discordUsername || null,
+        lastLoginAt: new Date(),
+      },
+    });
+  } else {
+    account = await prisma.citizenAccount.update({
+      where: { id: account.id },
+      data: {
+        lastLoginAt: new Date(),
+        discordUsername: row.discordUsername || account.discordUsername,
+      },
+    });
+  }
+
+  const isSecure = env.PUBLIC_BASE_URL.startsWith('https');
+  const sessionAccount = { id: account.id, discordId: account.discordId, username: account.discordUsername, avatar: null };
+  const session = citizenSessions.createSession(sessionAccount, null, isSecure);
+
+  let staffCookie = null;
+  const staffUser = await prisma.users.findFirst({ where: { discordId: row.discordId } });
+  if (staffUser && staffUser.isActive) {
+    const staffSess = staffSessions.createSession({ id: staffUser.id, discord_id: staffUser.discordId, discord_username: staffUser.discordUsername, discord_avatar: staffUser.discordAvatar, full_name: staffUser.fullName, specialty: staffUser.specialty, role: staffUser.role, status: staffUser.status, is_active: staffUser.isActive }, isSecure);
+    staffCookie = staffSess.cookie;
+    audit({ action: 'staff.site_code', entityType: 'user', entityId: staffUser.id, details: { code, discordId: row.discordId }, ip: req.ip });
+  }
+
+  audit({ action: 'citizen.site_code', entityType: 'citizen_account', entityId: account.id, details: { code, discordId: row.discordId }, ip: req.ip });
+  if (staffCookie) res.setHeader('Set-Cookie', [session.cookie, staffCookie]);
+  else res.setHeader('Set-Cookie', session.cookie);
+  res.json({ ok: true, account: { discordId: account.discordId, username: account.discordUsername }, isStaff: !!staffUser });
+});
+
 // ---- Состояние сессии -------------------------------------------------------
 
 router.get('/api/citizen/state', (req, res) => {

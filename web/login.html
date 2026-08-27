@@ -81,8 +81,14 @@ img{ -webkit-user-drag:none; user-select:none }
     <div class="me" id="ctz-me"></div>
     <div id="ctz-entry">
       <h1>Вход для граждан</h1>
-      <p class="sub">Войдите через свой аккаунт Discord.</p>
-      <a class="btn btn-discord" id="ctz-discord" href="/auth/discord?mode=citizen" style="margin-top:8px">Войти через Discord</a>
+      <p class="sub">В Discord: <b>/емиас</b> → «Код для сайта» — получите одноразовый код.</p>
+      <div class="fld" style="margin-top:14px">
+        <label>Код из Discord</label>
+        <input class="inp" id="ctz-code" placeholder="ABC123" maxlength="6" style="text-transform:uppercase;letter-spacing:3px;text-align:center;font-size:18px;font-weight:800">
+      </div>
+      <button class="btn btn-go" id="ctz-code-btn">Войти по коду</button>
+      <div class="divider">Код одноразовый, действует 10 минут</div>
+      <a class="btn btn-discord" id="ctz-discord" href="/auth/discord?mode=citizen" style="margin-top:14px">Войти через Discord (ссылка)</a>
       <div style="margin-top:12px">
         <button class="linkish" id="ctz-demo-toggle" style="font-size:12px">Демо режим</button>
         <div id="ctz-demo" style="display:none; margin-top:10px; padding:12px; border:1.5px solid #e6edf6; border-radius:12px; background:#f8fafc; text-align:left">
@@ -118,8 +124,14 @@ img{ -webkit-user-drag:none; user-select:none }
   <div class="pane" id="pane-staff">
     <div class="me" id="staff-me"></div>
     <h1>Вход для сотрудников</h1>
-      <p class="sub">Регистратура, врачи и главный врач.<br>Войдите через аккаунт Discord.</p>
-      <a class="btn btn-discord" id="st-discord" href="/auth/discord?mode=staff" style="margin-top:8px">Войти через Discord</a>
+      <p class="sub">Регистратура, врачи и главный врач.<br>В Discord: <b>/емиас</b> → «Код для сайта».</p>
+      <div class="fld" style="margin-top:14px">
+        <label>Код из Discord</label>
+        <input class="inp" id="st-code" placeholder="ABC123" maxlength="6" style="text-transform:uppercase;letter-spacing:3px;text-align:center;font-size:18px;font-weight:800">
+      </div>
+      <button class="btn btn-go" id="st-code-btn">Войти по коду</button>
+      <div class="divider">Код одноразовый, 10 минут</div>
+      <a class="btn btn-discord" id="st-discord" href="/auth/discord?mode=staff" style="margin-top:14px">Войти через Discord (ссылка)</a>
     <div style="margin-top:12px">
       <button class="linkish" id="st-demo-toggle" style="font-size:12px">Демо режим</button>
       <div id="st-demo" style="display:none; margin-top:10px; padding:12px; border:1.5px solid #e6edf6; border-radius:12px; background:#f8fafc; text-align:left">
@@ -236,6 +248,34 @@ function citizenAuthed(meData){
   m.querySelector('span').textContent=meData.patient?(' · персонаж: '+meData.patient.fullName):' · персонаж не выбран';
   loadProfiles();
 }
+$('ctz-code-btn').addEventListener('click',function(){
+  var b=$('ctz-code-btn'),code=$('ctz-code').value.trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if(!code){showError('Введите код из Discord');return;}
+  b.disabled=true;b.textContent='Проверка…';
+  fetch('/api/citizen/auth/code',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:code})})
+  .then(function(r){return r.json().then(function(d){return{status:r.status,data:d};});})
+  .then(function(res){
+    if(res.data&&res.data.ok){
+      if(res.data.isStaff){location.href='/staff.html';} else {location.reload();}
+    } else {b.disabled=false;b.textContent='Войти по коду';showError((res.data&&res.data.error)||'Неверный код');}
+  })
+  .catch(function(){b.disabled=false;b.textContent='Войти по коду';showError('Ошибка соединения');});
+});
+$('ctz-code').addEventListener('keydown',function(e){if(e.key==='Enter'){$('ctz-code-btn').click();}});
+$('st-code-btn').addEventListener('click',function(){
+  var b=$('st-code-btn'),code=$('st-code').value.trim().toUpperCase().replace(/[^A-Z0-9]/g,'');
+  if(!code){showError('Введите код из Discord');return;}
+  b.disabled=true;b.textContent='Проверка…';
+  fetch('/api/citizen/auth/code',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({code:code})})
+  .then(function(r){return r.json().then(function(d){return{status:r.status,data:d};});})
+  .then(function(res){
+    if(res.data&&res.data.ok){
+      location.href='/staff.html';
+    } else {b.disabled=false;b.textContent='Войти по коду';showError((res.data&&res.data.error)||'Неверный код');}
+  })
+  .catch(function(){b.disabled=false;b.textContent='Войти по коду';showError('Ошибка соединения');});
+});
+$('st-code').addEventListener('keydown',function(e){if(e.key==='Enter'){$('st-code-btn').click();}});
 /* Демо режим — пароль ZZZ3295 */
 $('ctz-demo-toggle').addEventListener('click',function(){var d=$('ctz-demo');d.style.display=d.style.display==='none'?'block':'none';});
 $('st-demo-toggle').addEventListener('click',function(){var d=$('st-demo');d.style.display=d.style.display==='none'?'block':'none';});
