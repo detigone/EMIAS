@@ -79,7 +79,6 @@ function main() {
     console.log(`${PROJECT.FULL_NAME}`);
     console.log(`API-шлюз запущен: ${env.PUBLIC_BASE_URL} (порт ${env.PORT})`);
     console.log(`OAuth2 Discord: ${env.isOauthConfigured ? 'настроен' : 'НЕ настроен (.env)'}`);
-    console.log(`Discord-бот: ${env.DISCORD_BOT_TOKEN ? 'токен задан (npm run bot)' : 'токен не задан (.env DISCORD_BOT_TOKEN)'}`);
     if (env.DEV_LOGIN) {
       console.log('Режим DEV_LOGIN включён: POST /auth/dev-login (только локально!)');
     }

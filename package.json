@@ -1,16 +1,17 @@
 {
   "name": "emias",
   "version": "2.0.0",
-  "description": "ЕМИАС — симулятор медицинской информационно-аналитической системы для ролевой игры. Веб-панель + API-шлюз + SQLite; Discord-бот подключается на фазе 2 как клиент API.",
+  "description": "ЕМИАС — симулятор медицинской информационно-аналитической системы для ролевой игры. Веб-панель + API-шлюз на PostgreSQL (Neon); Discord-бот — отдельный клиент к той же БД.",
   "main": "server/index.js",
   "type": "commonjs",
   "license": "MIT",
   "scripts": {
     "start": "node server/index.js",
     "dev": "node --watch server/index.js",
-    "bot": "node bot/index.js",
-    "db:migrate": "node server/db/migrate.js",
-    "db:seed": "node server/db/seed.js"
+    "db:generate": "prisma generate",
+    "db:push": "prisma db push",
+    "db:seed": "node server/db/seed.js",
+    "postinstall": "prisma generate"
   },
   "engines": {
     "node": ">=22.5.0"
@@ -21,5 +22,8 @@
     "dotenv": "^16.4.5",
     "express": "^5.2.1",
     "ws": "^8.21.3"
+  },
+  "devDependencies": {
+    "prisma": "^5.22.0"
   }
 }

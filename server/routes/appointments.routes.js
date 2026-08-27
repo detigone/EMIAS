@@ -74,7 +74,7 @@ router.post('/appointments', async (req, res) => {
 
   let doctor = null;
   if (doctorId) {
-    doctor = await prisma.users.findFirst({ where: { id: Number(doctorId), isActive: true } });
+    doctor = await prisma.users.findFirst({ where: { id: Number(doctorId), isActive: 1 } });
     if (!doctor) return res.status(404).json({ error: 'Врач не найден' });
 
     const conflict = await prisma.appointment.findFirst({
@@ -115,7 +115,7 @@ router.post('/appointments/call-next', async (req, res) => {
   if (!isSelf && !canManageTicket(req.user, { doctorId })) {
     return res.status(403).json({ error: 'Можно вызывать только своих пациентов' });
   }
-  const doctor = await prisma.users.findFirst({ where: { id: doctorId, isActive: true } });
+  const doctor = await prisma.users.findFirst({ where: { id: doctorId, isActive: 1 } });
   if (!doctor) return res.status(404).json({ error: 'Врач не найден' });
 
   const next = await prisma.appointment.findFirst({

@@ -1,8 +1,10 @@
 @echo off
 chcp 65001 >nul
-title ЕМИАС
-echo Запуск сервера и Discord-бота...
-start "ЕМИАС: сервер" cmd /k "npm start"
-timeout /t 2 >nobreak >nul
-start "ЕМИАС: бот" cmd /k "npm run bot"
-echo Готово. Сайт: http://localhost:3000
+title ЕМИАС — запуск сервера
+echo.
+echo Запуск API-шлюза ЕМИАС (веб-сайт)...
+echo Откройте в браузере: http://localhost:3000
+echo.
+echo (Discord-бот — отдельный репозиторий, запускается самостоятельно)
+echo.
+npm start

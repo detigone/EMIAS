@@ -349,8 +349,11 @@ a:hover { text-decoration: underline; }
   box-shadow: 0 1px 3px rgba(0,0,0,.05);
   border: 1px solid var(--border);
   overflow: hidden;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
   margin-bottom: 20px;
 }
+.table-wrap table.data { min-width: 640px; }
 table.data {
   width: 100%;
   border-collapse: collapse;
@@ -452,7 +455,14 @@ table.data .cell-muted { color: var(--text-muted); font-size: 12px; }
   grid-template-columns: 1fr 1fr;
   gap: 16px;
 }
-@media (max-width: 560px) { .form-grid { grid-template-columns: 1fr; } }
+@media (max-width: 560px) {
+  .form-grid { grid-template-columns: 1fr; }
+  .content { padding: 16px 14px 80px; }
+  .view-head { flex-direction: column; align-items: stretch; gap: 10px; }
+  .view-head > div:last-child { flex-wrap: wrap; }
+  .topbar-inner { padding: 0 14px; }
+  .topbar-user .user-name { display: none; }
+}
 .field { display: flex; flex-direction: column; gap: 6px; }
 .field-full { grid-column: 1 / -1; }
 .field label {

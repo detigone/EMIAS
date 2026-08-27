@@ -91,7 +91,7 @@ router.post('/internal/doctors/status', async (req, res) => {
   if (!['free', 'in_appointment', 'offline'].includes(status)) {
     return res.status(400).json({ error: 'Статус: free | in_appointment | offline' });
   }
-  const user = await prisma.users.findFirst({ where: { discordId, isActive: true } });
+  const user = await prisma.users.findFirst({ where: { discordId, isActive: 1 } });
   if (!user) return res.status(403).json({ error: 'Вы не сотрудник больницы' });
   await prisma.users.update({ where: { id: user.id }, data: { status } });
   hub.broadcast(WS_EVENTS.DOCTOR_STATUS_UPDATED, { doctorId: user.id, status });
@@ -112,7 +112,7 @@ router.get('/internal/schedule', async (req, res) => {
 
 router.get('/internal/doctors', async (req, res) => {
   const rows = await prisma.users.findMany({
-    where: { isActive: true },
+    where: { isActive: 1 },
     orderBy: { fullName: 'asc' },
     select: { id: true, discordId: true, fullName: true, specialty: true, role: true, status: true },
   });
@@ -126,7 +126,7 @@ router.get('/internal/doctors', async (req, res) => {
 
 router.get('/internal/staff/:discordId', async (req, res) => {
   const row = await prisma.users.findFirst({
-    where: { discordId: String(req.params.discordId), isActive: true },
+    where: { discordId: String(req.params.discordId), isActive: 1 },
     select: { id: true, discordId: true, fullName: true, role: true },
   });
   res.json({
@@ -227,7 +227,7 @@ router.post('/internal/patients/:id/tickets', async (req, res) => {
   let doctor = null;
   const doctorId = Number(req.body?.doctorId || 0);
   if (doctorId) {
-    doctor = await prisma.users.findFirst({ where: { id: doctorId, isActive: true } });
+    doctor = await prisma.users.findFirst({ where: { id: doctorId, isActive: 1 } });
     if (!doctor) return res.status(404).json({ error: 'Врач не найден' });
     const conflictDoc = await prisma.appointment.findFirst({
       where: { doctorId: doctor.id, date, time, status: { in: ['waiting', 'in_room'] } },
@@ -269,7 +269,7 @@ router.post('/internal/tickets/:id/cancel', async (req, res) => {
   const viaDiscordId = String(req.body?.viaDiscordId || '');
   if (viaDiscordId && ticket.patient?.discordId === viaDiscordId) allowed = true;
   if (viaDiscordId) {
-    const staff = await prisma.users.findFirst({ where: { discordId: viaDiscordId, isActive: true } });
+    const staff = await prisma.users.findFirst({ where: { discordId: viaDiscordId, isActive: 1 } });
     if (staff) allowed = true;
   }
   if (!allowed) return res.status(403).json({ error: 'Нет прав на этот талон' });
@@ -307,7 +307,7 @@ router.get('/internal/reminders', async (req, res) => {
     where: {
       date: todayIso(), status: 'waiting',
       time: { gte: nowT, lte: limT },
-      patient: { discordId: { notIn: [null, ''] } },
+      patient: { discordId: { not: null, notIn: [''] } },
     },
     include: { patient: true, doctor: true },
     orderBy: { time: 'asc' },

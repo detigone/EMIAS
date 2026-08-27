@@ -105,7 +105,7 @@ router.get('/auth/callback', async (req, res) => {
       return res.redirect('/login.html?tab=citizen&authed=1');
     }
 
-    let user = await prisma.users.findUnique({ where: { discordId: profile.id } });
+    let user = await prisma.users.findFirst({ where: { discordId: profile.id } });
     if (!user) {
       const role = env.ADMIN_DISCORD_IDS.includes(profile.id) ? ROLES.HEAD_PHYSICIAN : ROLES.PHYSICIAN;
       const displayName = profile.global_name || profile.username;
@@ -263,8 +263,8 @@ router.post('/auth/dev-login', async (req, res) => {
   }
   const userId = Number(req.body?.userId || 0);
   let user = userId
-    ? await prisma.users.findUnique({ where: { id: userId, isActive: true } })
-    : (await prisma.users.findMany({ where: { isActive: true }, take: 1, orderBy: { id: 'asc' } }))[0];
+    ? await prisma.users.findUnique({ where: { id: userId, isActive: 1 } })
+    : (await prisma.users.findMany({ where: { isActive: 1 }, take: 1, orderBy: { id: 'asc' } }))[0];
 
   if (!user) {
     user = await prisma.users.create({

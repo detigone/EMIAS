@@ -10,7 +10,7 @@ const router = express.Router();
 
 router.get('/staff', requireAuth, async (req, res) => {
   const rows = await prisma.users.findMany({
-    where: { isActive: true, role: { in: [ROLES.PHYSICIAN, ROLES.HEAD_PHYSICIAN] } },
+    where: { isActive: 1, role: { in: [ROLES.PHYSICIAN, ROLES.HEAD_PHYSICIAN] } },
     orderBy: { fullName: 'asc' },
     select: { id: true, fullName: true, specialty: true, role: true, status: true },
   });
@@ -72,7 +72,7 @@ router.get('/stats', requireAuth, requireRole(ROLES.HEAD_PHYSICIAN), async (req,
     await Promise.all([
       prisma.patients.count(),
       prisma.patients.count({ where: { status: 'blocked' } }),
-      prisma.users.count({ where: { isActive: true } }),
+      prisma.users.count({ where: { isActive: 1 } }),
       prisma.appointment.count({ where: { date: today } }),
       prisma.appointment.count({ where: { date: today, status: 'waiting' } }),
       prisma.appointment.count({ where: { date: today, status: 'done' } }),
