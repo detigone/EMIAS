@@ -61,6 +61,14 @@ img{ -webkit-user-drag:none; user-select:none }
 .copy-btn:hover{border-color:#93c5fd;color:#2563eb;background:#f0f5ff}
 .copy-btn.copied{border-color:#86efac;color:#065f46;background:#dcfce7}
 .copy-wrap{display:inline-flex;align-items:center;gap:4px}
+.site-footer{position:fixed;bottom:0;left:0;right:0;z-index:1;padding:14px 20px;background:rgba(255,255,255,.85);backdrop-filter:blur(10px);border-top:1px solid #e6edf6;font-size:12px;color:#7c8aa0;text-align:center}
+.footer-cols{display:flex;justify-content:center;gap:30px;margin-bottom:8px}
+.footer-col h4{margin:0 0 3px;font-size:11px;font-weight:700;color:#0f2b4e;text-transform:uppercase;letter-spacing:.4px}
+.footer-col a{color:#2563eb;text-decoration:none;font-weight:600}
+.footer-col a:hover{text-decoration:underline}
+.footer-credit{font-size:11px;color:#9aa7ba;margin-bottom:4px}
+.footer-disclaimer{font-size:10px;color:#b0bac9}
+.oauth-note{margin-top:10px;padding:8px 10px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;font-size:11px;color:#92400e;text-align:left;line-height:1.4}
 </style>
 </head>
 <body>
@@ -89,6 +97,7 @@ img{ -webkit-user-drag:none; user-select:none }
       <button class="btn btn-go" id="ctz-code-btn">Войти по коду</button>
       <div class="divider">Код одноразовый, действует 10 минут</div>
       <a class="btn btn-discord" id="ctz-discord" href="/auth/discord?mode=citizen" style="margin-top:14px">Войти через Discord (ссылка)</a>
+      <div class="oauth-note">⚠ OAuth2-вход пока работает нестабильно. Рекомендуем вход по коду.</div>
       <div style="margin-top:12px">
         <button class="linkish" id="ctz-demo-toggle" style="font-size:12px">Демо режим</button>
         <div id="ctz-demo" style="display:none; margin-top:10px; padding:12px; border:1.5px solid #e6edf6; border-radius:12px; background:#f8fafc; text-align:left">
@@ -132,6 +141,7 @@ img{ -webkit-user-drag:none; user-select:none }
       <button class="btn btn-go" id="st-code-btn">Войти по коду</button>
       <div class="divider">Код одноразовый, 10 минут</div>
       <a class="btn btn-discord" id="st-discord" href="/auth/discord?mode=staff" style="margin-top:14px">Войти через Discord (ссылка)</a>
+      <div class="oauth-note">⚠ OAuth2-вход пока работает нестабильно. Рекомендуем вход по коду.</div>
     <div style="margin-top:12px">
       <button class="linkish" id="st-demo-toggle" style="font-size:12px">Демо режим</button>
       <div id="st-demo" style="display:none; margin-top:10px; padding:12px; border:1.5px solid #e6edf6; border-radius:12px; background:#f8fafc; text-align:left">
@@ -141,7 +151,6 @@ img{ -webkit-user-drag:none; user-select:none }
     </div>
   </div>
 
-  <div class="disc">Данный сайт не является официальным ресурсом. Проект создан исключительно для RP-проекта. Все персонажи и события вымышлены.</div>
 </div>
 
 <script src="/js/copy.js"></script>
