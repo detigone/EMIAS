@@ -22,6 +22,14 @@
   }
 
   var res = fetchSync('/api/citizen/bootstrap');
+
+  // Временный обход окна входа только при явном ?dev=1 и включённом
+  // локальном DEV_LOGIN. На production сервер dev-auth отвечает 404.
+  if (res.status === 401 && new URLSearchParams(window.location.search).get('dev') === '1') {
+    fetchSync('/api/citizen/dev-auth', 'POST', {});
+    res = fetchSync('/api/citizen/bootstrap');
+  }
+
   if (res.status === 403) {
     window.stop();
     window.location.replace('/login.html?tab=citizen&error=blocked');
