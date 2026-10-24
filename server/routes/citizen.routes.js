@@ -198,11 +198,10 @@ router.get('/api/citizen/state', (req, res) => {
   });
 });
 
-// Демо-вход гражданина — пароль ZZZ3295
+// Временный dev-вход доступен только при NODE_ENV !== production и DEV_LOGIN=1.
 router.post('/api/citizen/dev-auth', async (req, res) => {
-  const pass = String(req.body?.password || '').trim();
-  if (pass !== 'ZZZ3295') {
-    return res.status(403).json({ error: 'Неверный пароль демо' });
+  if (!env.DEV_LOGIN) {
+    return res.status(404).json({ error: 'Dev login is disabled' });
   }
 
   let account = await prisma.citizenAccount.findUnique({ where: { discordId: DEV_DISCORD_ID } });
